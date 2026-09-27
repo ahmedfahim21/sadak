@@ -191,8 +191,15 @@ export function buildLandmark(l: MapLandmark, city: Landmark, clear?: ClearTest,
       return fountain(w, d, 0xd8cfbd);
     case "kabutar_khana":
       return kabutarKhana(w, d);
-    case "colonial":
-      return colonialBlock(w, d, Math.max(2, Math.min(4, Math.round(Math.min(w, d) / 8))), 0xe6d8b8);
+    case "colonial": {
+      const floors = Math.max(2, Math.min(4, Math.round(Math.min(w, d) / 8)));
+      // Park Street's and Chowringhee's mansion blocks, and the Asiatic
+      // Society's neoclassical front: one vocabulary, each its own face.
+      if (/Queens Mansions/i.test(l.name)) return colonialBlock(w, d, 5, 0xe3c48a, { turrets: true, balconies: true, trim: 0xf6efe0 });
+      if (/Chowringhee Mansions/i.test(l.name)) return colonialBlock(w, d, 4, 0xefe3cb, { arcade: true, balconies: true, trim: 0xfaf6ee });
+      if (/Asiatic Society/i.test(l.name)) return colonialBlock(w, d, 2, 0xf3efe6, { portico: true, trim: 0xffffff });
+      return colonialBlock(w, d, floors, 0xe6d8b8);
+    }
     case "agiyari":
       return colonialBlock(w, d, 2, 0xf0e6d0);
     case "memorial_garden":

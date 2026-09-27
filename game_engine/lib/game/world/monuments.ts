@@ -1034,10 +1034,25 @@ export function kabutarKhana(w: number, d: number): Monument {
 
 /** Colonial block: stuccoed floors with a pillared portico and pediment,
  *  green louvred shutters. Park Street, Fort Kochi. */
-export function colonialBlock(w: number, d: number, floors: number, wall: number): Monument {
+/** How a colonial block is dressed: Calcutta's mansion blocks and public
+ *  buildings share a vocabulary but not a face. */
+export type ColonialDress = {
+  /** A pedimented portico on columns at the front. */
+  portico?: boolean;
+  /** Domed octagonal turrets at the four corners (the Park Street mansions). */
+  turrets?: boolean;
+  /** Cast-iron balconies on alternate bays of the upper floors. */
+  balconies?: boolean;
+  /** A colonnade over the footpath along the front (Chowringhee). */
+  arcade?: boolean;
+  trim?: number;
+};
+
+export function colonialBlock(w: number, d: number, floors: number, wall: number, dress: ColonialDress = { portico: true }): Monument {
   const P = new Parts();
   const C: LocalBox[] = [];
-  const TRIM = 0xf4efe4;
+  const TRIM = dress.trim ?? 0xf4efe4;
+  const IRON = 0x2a2d31;
   const SHUTTER = 0x2f5e3f;
   const fh = 4;
   const h = floors * fh;
@@ -1069,6 +1084,21 @@ export function colonialBlock(w: number, d: number, floors: number, wall: number
         const [hx, hz] = at(u, 0.14);
         P.box(1.7, 0.22, 0.28, hx, fh * f + 3.2, hz, TRIM, rot);
         P.box(1.4, 0.12, 0.22, hx, fh * f + 0.7, hz, TRIM, rot);
+        if (dress.balconies && k % 2 === 0) {
+          // A cast-iron balcony: a slab on brackets, a railing of balusters.
+          const [bx, bz2] = at(u, 0.5);
+          P.box(2.1, 0.12, 0.9, bx, fh * f + 0.6, bz2, TRIM, rot);
+          const [rx, rz] = at(u, 0.92);
+          P.box(2.1, 0.06, 0.06, rx, fh * f + 1.6, rz, IRON, rot);
+          for (let b = -4; b <= 4; b++) {
+            const [ix, iz] = at(u + b * 0.24, 0.92);
+            P.box(0.03, 0.95, 0.03, ix, fh * f + 1.12, iz, IRON, rot);
+          }
+          for (const e of [-1, 1]) {
+            const [ex, ez] = at(u + e * 1.02, 0.5);
+            P.box(0.03, 0.95, 0.85, ex, fh * f + 1.12, ez, IRON, rot);
+          }
+        }
       }
       const [px, pz] = at(-len / 2 + k * bay, 0.1);
       if (k > 0) P.box(0.35, h - 0.4, 0.2, px, h / 2, pz, TRIM, rot);
@@ -1098,6 +1128,40 @@ export function colonialBlock(w: number, d: number, floors: number, wall: number
   rail(bw, 0, bz - bd / 2, "x");
   rail(bd, bw / 2, bz, "z");
   rail(bd, -bw / 2, bz, "z");
+  // Turrets at the corners: octagonal, a storey above the parapet, domed.
+  if (dress.turrets) {
+    const r = Math.min(2.4, bw * 0.06, bd * 0.08);
+    for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      const tx = (sx * bw) / 2;
+      const tz = bz + (sz * bd) / 2;
+      P.cyl(r, r, h + 3.5, tx, (h + 3.5) / 2, tz, wall, 8);
+      for (let f = 1; f <= floors; f++) P.cyl(r + 0.12, r + 0.12, 0.3, tx, fh * f, tz, TRIM, 8);
+      P.cyl(r + 0.3, r + 0.3, 0.4, tx, h + 3.7, tz, TRIM, 8);
+      P.dome(r * 0.95, tx, h + 3.9, tz, 0x7a8a8c, 1);
+      P.cyl(0.06, 0.06, 1.2, tx, h + 3.9 + r * 1.2 + 0.4, tz, IRON, 4);
+      C.push({ x: tx, z: tz, hw: r * 0.92, hd: r * 0.92 });
+    }
+  }
+  // A colonnade along the front, over the footpath: columns and a roof that
+  // is the first floor's verandah.
+  if (dress.arcade) {
+    const depth = Math.min(3, d / 2 - (bz + bd / 2) - 0.2);
+    if (depth > 1.5) {
+      const az = bz + bd / 2 + depth;
+      const n = Math.max(3, Math.floor(bw / 4));
+      for (let k = 0; k <= n; k++) {
+        const x = -bw / 2 + 0.4 + (k * (bw - 0.8)) / n;
+        P.cyl(0.26, 0.3, fh, x, fh / 2, az - 0.3, TRIM, 10);
+        P.box(0.7, 0.3, 0.7, x, 0.15, az - 0.3, TRIM);
+        C.push({ x, z: az - 0.3, hw: 0.3, hd: 0.3 });
+      }
+      P.box(bw, 0.4, depth + 0.2, 0, fh + 0.2, bz + bd / 2 + depth / 2, TRIM);
+      // Its verandah rail above.
+      P.box(bw, 0.08, 0.08, 0, fh + 1.3, az - 0.1, IRON);
+      for (let x = -bw / 2 + 0.2; x < bw / 2; x += 0.3) P.box(0.04, 0.9, 0.04, x, fh + 0.85, az - 0.1, IRON);
+    }
+  }
+  if (!dress.portico) return finish(P, C, []);
   // Portico.
   const pw = Math.min(bw * 0.5, 14);
   const pz = bz + bd / 2 + 1.6;

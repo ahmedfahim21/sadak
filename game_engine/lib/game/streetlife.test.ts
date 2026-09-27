@@ -815,6 +815,24 @@ test("each city's small temples are its own: Gujarati marble or sandstone, a way
   assert.equal(form("purani-sadak", "Gauri Shankar Hindu Temple"), "");
 });
 
+test("Kolkata's colonial buildings each have their own face: turrets, a colonnade, a portico", () => {
+  const map = loadMap("park-gully");
+  const build = (name: string) => buildLandmark(map.landmarks.find((l) => l.name === name)!, "kolkata");
+  const size = (c: { hw: number; hd: number }) => Math.max(c.hw, c.hd);
+  // Queens Mansions: four turret colliders at the corners; no portico columns.
+  const queens = build("Queens Mansions").colliders;
+  assert.equal(queens.filter((c) => c.hw === c.hd && size(c) > 1.5 && size(c) < 2.5).length, 4, "no corner turrets");
+  // Chowringhee Mansions: a row of colonnade columns along the front.
+  const chowringhee = build("Chowringhee Mansions").colliders;
+  assert.ok(chowringhee.filter((c) => c.hw === 0.3 && c.hd === 0.3).length >= 5, "no colonnade");
+  // The Asiatic Society: its portico's six columns, and nothing else small.
+  const asiatic = build("Old Building of the Asiatic Society").colliders;
+  assert.equal(asiatic.filter((c) => c.hw === 0.35).length, 6, "no portico");
+  // All three different in outline.
+  const shape = (cs: typeof queens) => cs.map((c) => `${c.hw.toFixed(1)}x${c.hd.toFixed(1)}`).sort().join();
+  assert.equal(new Set([shape(queens), shape(chowringhee), shape(asiatic)]).size, 3);
+});
+
 /** The map's static collision, as buildWorld registers it. */
 function mapCollision(map: MapData, landmark: Landmark) {
   const world = new CollisionWorld();
