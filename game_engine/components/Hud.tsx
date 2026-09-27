@@ -23,6 +23,7 @@ import { ErrandIcon } from "@/components/map/errandIcons";
 import type { Landmark } from "@/lib/game/assets";
 import { roadLabels, type RoadLabel } from "@/lib/game/world/mapLabels";
 import { LocationCard } from "@/components/map/LocationCard";
+import { StaminaBar } from "@/components/StaminaBar";
 import { LocateFixed, PanelLeftClose, PanelLeftOpen, Volume2, VolumeX } from "lucide-react";
 
 const MAP_PX = 168;
@@ -502,6 +503,7 @@ export default function Hud({
   return (
     <>
       <LocationCard map={map} live={live} district={district} compact={mobilePlay} onPlace={onPlace} />
+      <StaminaBar live={live} />
       {mobilePlay ? (
         <>
           <div className="pointer-events-none absolute inset-x-3 top-3 flex items-start justify-between gap-2">

@@ -10,7 +10,7 @@ import { BOUNDARY_INSET } from "./world/boundary";
 import { createWaypointBeacon } from "./world/beacons";
 import { attireFor } from "./attire";
 import { makeHero, HeroAnimator, type HeroRig } from "./hero";
-import { newBody, stepBody, SPRINT_SPEED } from "./movement";
+import { newBody, newStamina, stepBody, stepStamina, SPRINT_SPEED, WALK_SPEED } from "./movement";
 import { makeMissionShopStall, makeStreetMandir } from "./assets/index";
 import { makeBarberShop } from "./assets/barber";
 import { BARBER_ENTER_RADIUS, BARBER_FACING, barberSignFor } from "./barber";
@@ -29,6 +29,7 @@ import { createRenderPipeline, type RenderPipeline } from "./render";
 import { presetFor } from "./fx/presets";
 import { createCelifier } from "./fx/toon";
 import { createSky, type SkyRig } from "./fx/sky";
+import type { SoundFrame } from "@/lib/audio/ambience";
 
 export type TaskSnapshot = {
   id: string;
@@ -72,6 +73,9 @@ export type LiveState = {
   z: number;
   heading: number;
   speed: number;
+  /** Sprint breath, 0..1, and whether it's run out. */
+  stamina: number;
+  winded: boolean;
 };
 
 /** How often the React-facing telemetry is pushed. Changes that matter for
@@ -200,6 +204,8 @@ export class Game {
   private readonly tmpCam = new THREE.Vector3();
   private readonly lookTarget = new THREE.Vector3();
   private camFov = 55;
+  /** 0..1, eased: how much of a sprint the camera is showing. */
+  private sprintFeel = 0;
   /** Fraction of the full chase distance the camera may use (see updateCamera). */
   private camReach = 1;
 
@@ -233,7 +239,7 @@ export class Game {
 
   private onTelemetry: (t: Telemetry) => void;
   /** See LiveState — mutated every frame, read by the minimap's own rAF. */
-  public readonly live: LiveState = { x: 0, z: 0, heading: 0, speed: 0 };
+  public readonly live: LiveState = { x: 0, z: 0, heading: 0, speed: 0, stamina: 1, winded: false };
   private telemetryAccum = 0;
   private lastNearby: string | null = null;
   private lastNearBarber = false;
@@ -655,7 +661,7 @@ export class Game {
   private blocked(x: number, z: number): boolean {
     const edge = this.map.half - BOUNDARY_INSET;
     if (Math.abs(x) > edge || Math.abs(z) > edge) return true;
-    return this.world.collide.blocked(x, z, PLAYER_RADIUS) || this.world.traffic.hit(x, z, PLAYER_RADIUS) !== null;
+    return this.world.collide.blocked(x, z, PLAYER_RADIUS) || this.world.traffic.hit(x, z, PLAYER_RADIUS) !== null || this.world.animals.hit(x, z, PLAYER_RADIUS);
   }
 
   /* ---------------- loop ---------------- */
@@ -793,8 +799,10 @@ export class Game {
     if (Math.abs(this.turnRate) > 1e-4) this.yaw += this.turnRate * TURN_SPEED * dt;
   }
 
+  private stamina = newStamina();
+
   private updatePlayer(dt: number) {
-    const sprint = this.keys.has("ShiftLeft") || this.keys.has("ShiftRight");
+    const wantSprint = this.keys.has("ShiftLeft") || this.keys.has("ShiftRight") || Math.hypot(this.virtualFwd, this.virtualStrafe) > 0.95;
 
     let fwd = this.virtualFwd;
     let strafe = this.virtualStrafe;
@@ -815,6 +823,7 @@ export class Game {
     // forward = (sin yaw, 0, cos yaw); right = cross(forward, up) = (-cos yaw, 0, sin yaw).
     const dx = Math.sin(this.yaw) * fwd - Math.cos(this.yaw) * strafe;
     const dz = Math.cos(this.yaw) * fwd + Math.sin(this.yaw) * strafe;
+    const sprint = stepStamina(this.stamina, wantSprint, Math.hypot(dx, dz) > 0.1, dt);
 
     const b = this.body;
     const move = stepBody(
@@ -936,15 +945,19 @@ export class Game {
   }
 
   private updateCamera(dt: number) {
-    const dist = 9;
+    const speed = this.velocity.length();
+    const speed01 = THREE.MathUtils.clamp(speed / SPRINT_SPEED, 0, 1);
+    // How far into a sprint (0 at a walk): the camera drops back and low,
+    // and the frame takes the footfalls, so pace is felt, not just seen.
+    const sprint01 = THREE.MathUtils.clamp((speed - WALK_SPEED) / (SPRINT_SPEED - WALK_SPEED), 0, 1);
+    this.sprintFeel = damp(this.sprintFeel, sprint01, 3, dt);
+    const dist = 9 + this.sprintFeel * 1.4;
     // Kept shallow, and aimed above the player's head, a steeper angle fills
     // the lower half of the frame with empty road.
     // Follows the jump at a fraction of its height, so a hop reads as vertical
     // movement without the whole frame lurching with it.
-    const height = this.groundY + 2.8 + this.pitch * 5 + this.jumpY * 0.6;
-
-    const speed = this.velocity.length();
-    const speed01 = THREE.MathUtils.clamp(speed / SPRINT_SPEED, 0, 1);
+    const bob = Math.sin(this.clock.elapsedTime * speed * 1.15) * 0.05 * this.sprintFeel;
+    const height = this.groundY + 2.8 - this.sprintFeel * 0.35 + bob + this.pitch * 5 + this.jumpY * 0.6;
 
     // Slight offset to the right of dead-centre. A camera perfectly behind the
     // player puts the thing you are walking toward directly behind their head.
@@ -996,10 +1009,10 @@ export class Game {
 
     // Roll into the turn, scaled by how fast we're actually moving so the
     // camera doesn't tilt while spinning on the spot.
-    this.camera.rotateZ(-this.turnRate * 0.035 * speed01);
+    this.camera.rotateZ(-this.turnRate * (0.035 + 0.03 * this.sprintFeel) * speed01);
 
-    // Speed FOV. Small — 55 to ~62 — but it's most of the sensation of pace.
-    const targetFov = 55 + speed01 * 7;
+    // Speed FOV, 55 at rest to about 67 flat out: most of the sensation of pace.
+    const targetFov = 55 + speed01 * 7 + this.sprintFeel * 5;
     if (Math.abs(this.camFov - targetFov) > 0.01) {
       this.camFov = damp(this.camFov, targetFov, 4, dt);
       this.camera.fov = this.camFov;
@@ -1051,6 +1064,8 @@ export class Game {
     this.live.z = this.playerPos.z;
     this.live.heading = this.yaw;
     this.live.speed = this.velocity.length();
+    this.live.stamina = this.stamina.level;
+    this.live.winded = this.stamina.winded;
 
     const nearby = this.findNearby();
     const nearBarber = this.findNearBarber();
@@ -1089,6 +1104,17 @@ export class Game {
   }
 
   /* ---------------- public API ---------------- */
+
+  /** What the street sounds like from here: the traffic and crowd round the player (lib/audio/ambience.ts). */
+  public soundscape(): SoundFrame {
+    return {
+      x: this.playerPos.x,
+      z: this.playerPos.z,
+      heading: this.yaw,
+      vehicles: this.world.traffic.vehicles,
+      crowd: this.world.crowd.near(this.playerPos.x, this.playerPos.z, 25),
+    };
+  }
 
   /** Position readout, used by the headless end-to-end checks to navigate. */
   public get debugState() {

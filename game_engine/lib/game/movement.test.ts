@@ -109,3 +109,52 @@ test("no control while knocked aside: the body coasts to a stop", () => {
   stepBody(b, go(0, 0, { jumpPressed: true, control: 0 }), DT);
   assert.equal(b.windup, 0, "jumped while stumbling");
 });
+
+test("sprint breath: about six seconds flat out, winded until a third is back, quicker to recover standing", async () => {
+  const { newStamina, stepStamina } = await import("./movement");
+  const dt = 1 / 60;
+  const s = newStamina();
+  let t = 0;
+  while (stepStamina(s, true, true, dt)) t += dt;
+  assert.ok(t > 5.5 && t < 6.5, `sprinted ${t.toFixed(2)}s`);
+  assert.equal(s.winded, true);
+  // Winded: holding sprint gets nothing until it's back to a third.
+  let wait = 0;
+  while (!stepStamina(s, true, true, dt)) wait += dt;
+  // (less the one frame of sprint it has just spent)
+  assert.ok(s.level >= 0.35 - dt / 6 - 1e-9, `sprinting again at ${s.level.toFixed(3)}`);
+  assert.ok(wait > 2, `winded for only ${wait.toFixed(2)}s`);
+  // Standing still refills faster than walking.
+  const still = { level: 0.2, winded: false };
+  const walking = { level: 0.2, winded: false };
+  for (let i = 0; i < 60; i++) {
+    stepStamina(still, false, false, dt);
+    stepStamina(walking, false, true, dt);
+  }
+  assert.ok(still.level > walking.level);
+  // Not moving: holding shift doesn't spend any.
+  const idle = newStamina();
+  assert.equal(stepStamina(idle, true, false, dt), false);
+  assert.equal(idle.level, 1);
+});
+
+test("a sprint covers real ground: 30m+ in three seconds from a standstill, over twice a walk", async () => {
+  const { HeroAnimator } = await import("./hero");
+  const run = (sprint: boolean) => {
+    const b = newBody(0);
+    let z = 0;
+    const dt = 1 / 60;
+    for (let i = 0; i < 180; i++) {
+      stepBody(b, { dx: 0, dz: 1, sprint, jumpPressed: false, jumpHeld: false, control: 1 }, dt);
+      z += b.vz * dt;
+    }
+    return z;
+  };
+  const sprint = run(true);
+  const walk = run(false);
+  assert.ok(sprint >= 30, `sprinted ${sprint.toFixed(1)}m`);
+  assert.ok(sprint > walk * 2, `sprint ${sprint.toFixed(1)}m vs walk ${walk.toFixed(1)}m`);
+  // Long strides, not spinning legs: a human cadence even flat out.
+  const cadence = SPRINT_SPEED / HeroAnimator.stepLength(SPRINT_SPEED);
+  assert.ok(cadence < 4.6, `${cadence.toFixed(2)} steps/s at a sprint`);
+});
