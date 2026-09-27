@@ -113,7 +113,8 @@
   }
 
   kbd {
-    @apply inline-block min-w-[1.6em] rounded-base border-2 border-border bg-secondary-background px-1.5 py-0.5 text-xs font-base shadow-shadow;
+    /* Its own text colour: inherited, a key in a dark panel was white on its light chip. */
+    @apply inline-block min-w-[1.6em] rounded-base border-2 border-border bg-secondary-background px-1.5 py-0.5 text-xs font-base text-foreground shadow-shadow;
   }
 
   /* Key hint inside a brutal button: one shadow on the control, chip only inside */

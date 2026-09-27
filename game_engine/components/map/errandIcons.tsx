@@ -94,3 +94,16 @@ export function ErrandIcon({
   const Icon = ERRAND_ICONS[id];
   return <Icon className={className} strokeWidth={strokeWidth} size={size} color={color} aria-hidden />;
 }
+
+/** An errand's marker as the maps draw it (a coloured disc, its icon in
+ *  white, a pale ring), for keys and lists beside the map. */
+export function ErrandBadge({ id, colour, className }: { id: ErrandIconId; colour: string; className?: string }) {
+  return (
+    <span
+      className={`inline-flex size-5 shrink-0 items-center justify-center rounded-full shadow-[1px_1.5px_0_rgba(0,0,0,0.4)] ring-1 ring-white/55 ${className ?? ""}`}
+      style={{ background: colour }}
+    >
+      <ErrandIcon id={id} className="size-3" strokeWidth={2.25} color="#ffffff" />
+    </span>
+  );
+}

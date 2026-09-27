@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Crosshair, Maximize2, Minus, Plus, X } from "lucide-react";
+import { Crosshair, Maximize2, Minus, Navigation2, Plus, X } from "lucide-react";
 import type { LiveState, TaskSnapshot } from "@/lib/game/engine";
 import type { District } from "@/lib/game/districts";
 import type { MapData, Pt } from "@/lib/game/world/mapData";
@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { drawMapBase, entrances, kindColour, kindLabel, MAP_STYLE, type ErrandIconId, type Waypoint } from "./mapKit";
 import { drawDoor, drawPin, drawRoute } from "./blips";
-import { ErrandIcon } from "./errandIcons";
+import { ErrandBadge, ErrandIcon } from "./errandIcons";
 
 /** Pixels per metre, limits. */
 const MAX_SCALE = 9;
@@ -432,20 +432,21 @@ export function FullMap({
         <div className="pointer-events-none absolute bottom-3 left-3 flex flex-col gap-1 rounded-md bg-black/60 px-3 py-2 text-xs lg:hidden">
           {tasks.map((t) => (
             <span key={t.id} className={cn("flex items-center gap-2", t.done && "opacity-50 line-through")}>
-              <span className="inline-block size-3 rounded-full" style={{ background: t.colour }} />
-              <ErrandIcon id={icons[t.id]} className="size-3.5" />
+              <ErrandBadge id={t.done ? "done" : icons[t.id]} colour={t.colour} />
               {titles[t.id] ?? kindLabel(t.kind)}
             </span>
           ))}
           {barber && (
             <span className="flex items-center gap-2">
-              <span className="inline-block size-3 rounded-full" style={{ background: kindColour("barber", false) }} />
-              <ErrandIcon id="barber" className="size-3.5" />
+              <ErrandBadge id="barber" colour={kindColour("barber", false)} />
               {kindLabel("barber")}
             </span>
           )}
           <span className="flex items-center gap-2">
-            <span className="inline-block size-3 rounded-full bg-[#5ab0ff]" /> You
+            <span className="inline-flex size-5 shrink-0 items-center justify-center" aria-hidden>
+              <Navigation2 className="size-4" fill="#5ab0ff" color="#ffffff" strokeWidth={2} />
+            </span>
+            You
           </span>
         </div>
         {/* ODbL requires the attribution wherever the map data is shown. */}
@@ -465,20 +466,21 @@ export function FullMap({
               className={cn("flex items-center gap-2 text-left hover:text-white", t.done ? "text-white/40 line-through" : "text-white/85")}
               onClick={() => setView((v) => (v ? clamp({ ...v, cx: t.x, cz: t.z, scale: Math.max(v.scale, 2.5) }) : v))}
             >
-              <span className="inline-block size-3 shrink-0 rounded-full" style={{ background: t.colour }} />
-              <ErrandIcon id={icons[t.id]} className="size-4 shrink-0" />
+              <ErrandBadge id={t.done ? "done" : icons[t.id]} colour={t.colour} />
               <span className="min-w-0 truncate">{titles[t.id] ?? kindLabel(t.kind)}</span>
             </button>
           ))}
           {barber && (
             <span className="flex items-center gap-2 text-white/85">
-              <span className="inline-block size-3 rounded-full" style={{ background: kindColour("barber", false) }} />
-              <ErrandIcon id="barber" className="size-3.5" />
+              <ErrandBadge id="barber" colour={kindColour("barber", false)} />
               {kindLabel("barber")}
             </span>
           )}
           <span className="flex items-center gap-2 text-white/85">
-            <span className="inline-block size-3 rounded-full bg-[#5ab0ff]" /> You
+            <span className="inline-flex size-5 shrink-0 items-center justify-center" aria-hidden>
+              <Navigation2 className="size-4" fill="#5ab0ff" color="#ffffff" strokeWidth={2} />
+            </span>
+            You
           </span>
         </section>
         {found && (

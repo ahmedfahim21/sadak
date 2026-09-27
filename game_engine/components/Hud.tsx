@@ -299,17 +299,13 @@ export function MinimapPanel({
   map: MapData;
   onRecenter: () => void;
   onOpenMap: () => void;
-  /** Show the M key on it (keyboard play). */
+  /** Say under it that M opens the map (keyboard play); on it, it hid the streets. */
   showKey?: boolean;
 }) {
   return (
+    <div className="flex flex-col items-center gap-1">
     <div className="relative block overflow-hidden rounded-base">
       <Minimap live={live} tasks={tasks} barber={barber} waypoint={waypoint} route={route} size={size} map={map} onOpen={onOpenMap} />
-      {showKey && (
-        <kbd className="pointer-events-none absolute top-1.5 left-1.5 text-[10px] leading-none opacity-90" aria-hidden>
-          M
-        </kbd>
-      )}
       <Button
         variant="neutral"
         size="icon"
@@ -320,6 +316,8 @@ export function MinimapPanel({
       >
         <LocateFixed className="size-3.5" aria-hidden />
       </Button>
+    </div>
+      {showKey && <span className="text-[10px] leading-none text-foreground/60">M for the full map</span>}
     </div>
   );
 }
