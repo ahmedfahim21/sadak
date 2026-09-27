@@ -37,13 +37,43 @@ const SPAWN_MIN = 70;
 const SPAWN_MAX = 130;
 
 type Mode = "walk" | "stand" | "lie";
-type Animal = {
-  kind: Kind;
+
+/** A leg: hip and knee joints, and where it falls in the gait (0..1). */
+type Leg = { hip: THREE.Object3D; knee: THREE.Object3D; front: boolean; offset: number };
+
+type Rig = {
   mesh: THREE.Group;
-  legs: THREE.Object3D[];
-  head: THREE.Object3D;
-  tail: THREE.Object3D;
   body: THREE.Object3D;
+  legs: Leg[];
+  neck: THREE.Object3D;
+  jaw: THREE.Object3D | null;
+  ears: THREE.Object3D[];
+  tail: THREE.Object3D[];
+};
+
+/** How each animal moves: a cow's four-beat walk, a dog's trot. */
+type Gait = {
+  /** Share of a stride a foot is on the ground. */
+  duty: number;
+  /** Leg swing each way, radians. */
+  swing: number;
+  /** Hip to hoof, metres (for the stride that keeps feet from sliding). */
+  leg: number;
+  /** How far the body sinks lying down. */
+  low: number;
+  /** Knee fold (front, hind) when lying: [hipFront, kneeFront, hipHind, kneeHind]. */
+  fold: [number, number, number, number];
+  /** Fastest turn, rad/s. */
+  turn: number;
+};
+
+const GAIT: Record<Kind, Gait> = {
+  cow: { duty: 0.66, swing: 0.3, leg: 0.8, low: 0.6, fold: [-1.45, 2.9, -1.3, 2.3], turn: 0.7 },
+  dog: { duty: 0.45, swing: 0.45, leg: 0.42, low: 0.3, fold: [-1.45, 0.1, -1.35, 0.2], turn: 2.5 },
+};
+
+type Animal = Rig & {
+  kind: Kind;
   road: number;
   dir: 1 | -1;
   p: number;
@@ -51,11 +81,22 @@ type Animal = {
   off: number;
   mode: Mode;
   timer: number;
+  /** The pace it's making for, and the pace it's at (it eases in and out of a walk). */
   speed: number;
-  phase: number;
+  pace: number;
+  /** Where in the stride it is, 0..1. */
+  cycle: number;
+  /** 0 standing .. 1 lying, eased: going down front first, getting up hind first. */
+  lie: number;
+  /** Where the head is and where it's going: grazing, looking about, at the player. */
+  look: { pitch: number; yaw: number; toPitch: number; toYaw: number; timer: number; grazing: boolean; atPlayer: boolean };
+  ear: { timer: number; side: number; t: number };
+  swish: { timer: number; amp: number; t: number };
+  t: number;
   x: number;
   z: number;
   yaw: number;
+  yawRate: number;
 };
 
 export type Animals = {
@@ -76,99 +117,190 @@ function lambert(colour: number, owned: THREE.Material[]) {
   return m;
 }
 
-function part(geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number, parent: THREE.Object3D) {
-  const m = new THREE.Mesh(geo, mat);
-  m.position.set(x, y, z);
-  m.castShadow = true;
-  parent.add(m);
-  return m;
+/** Geometry and placement shorthands for building the models. */
+function kit(geos: THREE.BufferGeometry[]) {
+  const keep = <G extends THREE.BufferGeometry>(g: G) => (geos.push(g), g);
+  const add = (
+    geo: THREE.BufferGeometry,
+    mat: THREE.Material,
+    parent: THREE.Object3D,
+    at: [number, number, number],
+    o: { rot?: [number, number, number]; scale?: [number, number, number] } = {}
+  ) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(...at);
+    if (o.rot) m.rotation.set(...o.rot);
+    if (o.scale) m.scale.set(...o.scale);
+    m.castShadow = true;
+    parent.add(m);
+    return m;
+  };
+  const joint = (parent: THREE.Object3D, at: [number, number, number]) => {
+    const g = new THREE.Group();
+    g.position.set(...at);
+    parent.add(g);
+    return g;
+  };
+  return {
+    ball: (r: number) => keep(new THREE.SphereGeometry(r, 14, 10)),
+    /** A capsule lying along z. */
+    pill: (r: number, len: number) => keep(new THREE.CapsuleGeometry(r, len, 5, 12).rotateX(Math.PI / 2)),
+    /** A tapered limb hanging down from its joint. */
+    limb: (top: number, bottom: number, len: number) => keep(new THREE.CylinderGeometry(top, bottom, len, 10).translate(0, -len / 2, 0)),
+    horn: (r: number, len: number) => keep(new THREE.ConeGeometry(r, len, 8).translate(0, len / 2, 0)),
+    add,
+    joint,
+  };
 }
 
-/** A zebu, facing +z: hump over the shoulders, dewlap, upswept horns. */
-function makeCow(coat: number, owned: THREE.Material[], geos: THREE.BufferGeometry[]) {
-  const g = new THREE.Group();
-  const body = new THREE.Group();
-  g.add(body);
+/** A shade of a coat, for the parts that are darker (or lighter) on the animal. */
+const tone = (coat: number, k: number) => new THREE.Color(coat).multiplyScalar(k).getHex();
+
+/**
+ * A zebu, facing +z: a deep barrel on fine legs, the hump over the
+ * shoulders, a loose dewlap, bony hips, a long face with drooping ears and
+ * upswept horns, and a thin tail with a dark switch.
+ */
+function makeCow(coat: number, owned: THREE.Material[], geos: THREE.BufferGeometry[]): Rig {
+  const k = kit(geos);
+  const mesh = new THREE.Group();
+  const body = k.joint(mesh, [0, 0, 0]);
   const hide = lambert(coat, owned);
-  const dark = lambert(0x2a221c, owned);
-  const horn = lambert(0xd8cdb8, owned);
-  const box = (w: number, h: number, d: number) => {
-    const b = new THREE.BoxGeometry(w, h, d);
-    geos.push(b);
-    return b;
-  };
-  part(box(0.62, 0.62, 1.55), hide, 0, 1.02, 0, body);
-  part(box(0.48, 0.3, 0.42), hide, 0, 1.43, 0.42, body); // hump
-  const neck = new THREE.Group();
-  neck.position.set(0, 1.12, 0.78);
-  body.add(neck);
-  part(box(0.36, 0.42, 0.5), hide, 0, 0.05, 0.18, neck);
-  part(box(0.12, 0.3, 0.36), hide, 0, -0.25, 0.1, neck); // dewlap
-  const head = new THREE.Group();
-  head.position.set(0, 0.12, 0.5);
-  neck.add(head);
-  part(box(0.3, 0.3, 0.46), hide, 0, 0, 0.12, head);
-  part(box(0.24, 0.18, 0.12), dark, 0, -0.06, 0.38, head); // muzzle
+  // Zebu are darker over the hump and shoulders, lighter underneath.
+  const shoulder = lambert(tone(coat, 0.9), owned);
+  const dark = lambert(0x221b16, owned);
+  const muzzle = lambert(tone(coat, 0.45), owned);
+  const horn = lambert(0xcbbd9f, owned);
+
+  k.add(k.pill(0.37, 0.88), hide, body, [0, 1.0, -0.02], { scale: [0.84, 1.08, 1] });
+  k.add(k.ball(0.37), shoulder, body, [0, 1.04, 0.42], { scale: [0.86, 1.02, 0.9] }); // chest and shoulders
+  // The hump rises from the withers and slopes away behind.
+  k.add(k.ball(0.22), shoulder, body, [0, 1.28, 0.4], { rot: [0.5, 0, 0], scale: [0.85, 0.95, 1.35] });
+  for (const s of [-1, 1]) k.add(k.ball(0.09), hide, body, [s * 0.15, 1.24, -0.5], { scale: [1, 0.7, 1.5] }); // hip bones
+  k.add(k.ball(0.3), hide, body, [0, 1.06, -0.52], { scale: [0.9, 0.95, 0.8] }); // rump
+
+  const neck = k.joint(body, [0, 1.16, 0.66]);
+  neck.rotation.order = "YXZ";
+  k.add(k.pill(0.17, 0.3), shoulder, neck, [0, 0.02, 0.18], { rot: [-0.35, 0, 0], scale: [0.9, 1.1, 1] });
+  k.add(k.ball(0.2), hide, neck, [0, -0.22, 0.12], { scale: [0.3, 1, 1.25] }); // dewlap, hanging
+  const head = k.joint(neck, [0, 0.14, 0.42]);
+  head.rotation.x = 0.55; // a cow carries its face long and down
+  k.add(k.pill(0.13, 0.32), hide, head, [0, 0, 0.14], { scale: [1, 1.05, 1] });
+  k.add(k.ball(0.15), hide, head, [0, 0.04, -0.02], { scale: [1.05, 1, 0.9] }); // poll and forehead
+  k.add(k.ball(0.12), muzzle, head, [0, -0.02, 0.4], { scale: [1, 0.85, 0.8] });
+  for (const s of [-1, 1]) k.add(k.ball(0.022), dark, head, [s * 0.075, -0.02, 0.48]); // nostrils
+  const jaw = k.joint(head, [0, -0.08, 0.16]);
+  k.add(k.pill(0.075, 0.2), muzzle, jaw, [0, -0.03, 0.12], { scale: [1, 0.8, 1] });
+  const ears: THREE.Object3D[] = [];
   for (const s of [-1, 1]) {
-    const h = part(box(0.05, 0.28, 0.05), horn, s * 0.13, 0.26, -0.02, head);
-    h.rotation.z = -s * 0.35;
-    part(box(0.2, 0.08, 0.12), hide, s * 0.22, 0.06, -0.04, head); // ears
+    k.add(k.ball(0.028), dark, head, [s * 0.12, 0.07, 0.12]); // eyes
+    // Horns: up and out from the poll, curving back in at the tips.
+    const base = k.joint(head, [s * 0.1, 0.13, -0.04]);
+    base.rotation.set(-0.35, 0, -s * 0.55);
+    k.add(k.horn(0.04, 0.16), horn, base, [0, 0, 0]);
+    const tip = k.joint(base, [0, 0.15, 0]);
+    tip.rotation.set(-0.2, 0, s * 0.6);
+    k.add(k.horn(0.026, 0.13), horn, tip, [0, 0, 0]);
+    // Ears: long, hanging out to the side (they flick at flies).
+    const ear = k.joint(head, [s * 0.15, 0.04, 0.02]);
+    ear.rotation.z = -s * 0.5;
+    k.add(k.ball(0.12), hide, ear, [s * 0.1, 0, 0], { scale: [1, 0.3, 0.55] });
+    ears.push(ear);
   }
-  const legs: THREE.Object3D[] = [];
-  for (const [x, z] of [[-0.2, 0.55], [0.2, 0.55], [-0.2, -0.55], [0.2, -0.55]]) {
-    const hip = new THREE.Group();
-    hip.position.set(x, 0.75, z);
-    body.add(hip);
-    part(box(0.14, 0.75, 0.14), hide, 0, -0.375, 0, hip);
-    part(box(0.15, 0.08, 0.15), dark, 0, -0.72, 0, hip);
-    legs.push(hip);
+
+  const legs: Leg[] = [];
+  // Left front, right front, left hind, right hind; a walk's footfalls go LH, LF, RH, RF.
+  for (const [x, z, front, offset] of [[-0.19, 0.5, true, 0.25], [0.19, 0.5, true, 0.75], [-0.19, -0.5, false, 0], [0.19, -0.5, false, 0.5]] as const) {
+    const hip = k.joint(body, [x, 0.84, z]);
+    k.add(k.ball(front ? 0.13 : 0.15), front ? shoulder : hide, hip, [0, 0.02, 0], { scale: [0.8, 1.3, 1] });
+    k.add(k.limb(front ? 0.1 : 0.12, 0.06, 0.42), hide, hip, [0, 0, 0]);
+    const knee = k.joint(hip, [0, -0.42, 0]);
+    k.add(k.ball(0.06), hide, knee, [0, 0, 0]);
+    k.add(k.limb(0.05, 0.045, 0.32), hide, knee, [0, 0, 0]);
+    k.add(k.limb(0.055, 0.065, 0.07), dark, knee, [0, -0.31, 0.01]); // hoof
+    if (!front) {
+      // The hind leg's zig: thigh forward, hock back.
+      hip.rotation.x = -0.12;
+      knee.rotation.x = 0.22;
+    }
+    legs.push({ hip, knee, front, offset });
   }
-  const tail = new THREE.Group();
-  tail.position.set(0, 1.25, -0.78);
-  body.add(tail);
-  part(box(0.05, 0.7, 0.05), hide, 0, -0.35, -0.03, tail);
-  part(box(0.1, 0.14, 0.08), dark, 0, -0.72, -0.03, tail);
-  return { mesh: g, body, legs, head: neck, tail };
+
+  const tail: THREE.Object3D[] = [];
+  let parent: THREE.Object3D = k.joint(body, [0, 1.3, -0.74]);
+  tail.push(parent);
+  parent.rotation.x = 0.3;
+  for (let i = 0; i < 3; i++) {
+    k.add(k.limb(0.028, 0.022, 0.24), hide, parent, [0, 0, 0]);
+    if (i < 2) {
+      parent = k.joint(parent, [0, -0.24, 0]);
+      tail.push(parent);
+    }
+  }
+  k.add(k.ball(0.06), dark, parent, [0, -0.3, 0], { scale: [0.8, 1.6, 0.8] }); // switch
+
+  return { mesh, body, legs, neck, jaw, ears, tail };
 }
 
-/** An Indian pariah dog: lean, short coat, curled tail, pricked ears. */
-function makeDog(coat: number, owned: THREE.Material[], geos: THREE.BufferGeometry[]) {
-  const g = new THREE.Group();
-  const body = new THREE.Group();
-  g.add(body);
+/** An Indian pariah dog: lean and deep-chested, a wedge of a head, pricked ears, the tail curled over the back. */
+function makeDog(coat: number, owned: THREE.Material[], geos: THREE.BufferGeometry[]): Rig {
+  const k = kit(geos);
+  const mesh = new THREE.Group();
+  const body = k.joint(mesh, [0, 0, 0]);
   const fur = lambert(coat, owned);
+  const pale = lambert(tone(coat, 1.15), owned);
   const dark = lambert(0x1c1814, owned);
-  const box = (w: number, h: number, d: number) => {
-    const b = new THREE.BoxGeometry(w, h, d);
-    geos.push(b);
-    return b;
-  };
-  part(box(0.24, 0.24, 0.62), fur, 0, 0.5, 0, body);
-  const neck = new THREE.Group();
-  neck.position.set(0, 0.58, 0.3);
-  body.add(neck);
-  part(box(0.2, 0.2, 0.22), fur, 0, 0.1, 0.1, neck);
-  part(box(0.12, 0.1, 0.16), fur, 0, 0.05, 0.27, neck); // snout
-  part(box(0.05, 0.04, 0.04), dark, 0, 0.08, 0.36, neck); // nose
+
+  k.add(k.pill(0.13, 0.36), fur, body, [0, 0.52, -0.02], { scale: [0.85, 1, 1] });
+  k.add(k.ball(0.15), pale, body, [0, 0.5, 0.18], { scale: [0.85, 1.05, 1] }); // chest
+  const neck = k.joint(body, [0, 0.6, 0.26]);
+  neck.rotation.order = "YXZ";
+  k.add(k.pill(0.07, 0.12), fur, neck, [0, 0.05, 0.05], { rot: [-0.8, 0, 0] });
+  const head = k.joint(neck, [0, 0.14, 0.1]);
+  k.add(k.ball(0.09), fur, head, [0, 0, 0], { scale: [1, 0.95, 1.1] });
+  k.add(k.pill(0.045, 0.1), fur, head, [0, -0.025, 0.12]); // muzzle
+  k.add(k.ball(0.022), dark, head, [0, -0.01, 0.23]); // nose
+  const jaw = k.joint(head, [0, -0.05, 0.04]);
+  k.add(k.pill(0.03, 0.09), pale, jaw, [0, -0.005, 0.08]);
+  const ears: THREE.Object3D[] = [];
   for (const s of [-1, 1]) {
-    const ear = part(box(0.06, 0.12, 0.04), fur, s * 0.07, 0.24, 0.06, neck);
-    ear.rotation.z = -s * 0.2;
+    k.add(k.ball(0.014), dark, head, [s * 0.045, 0.03, 0.08]);
+    const ear = k.joint(head, [s * 0.05, 0.07, -0.01]);
+    ear.rotation.z = -s * 0.25;
+    k.add(k.horn(0.035, 0.09), fur, ear, [0, 0, 0], { scale: [1, 1, 0.45] });
+    ears.push(ear);
   }
-  const legs: THREE.Object3D[] = [];
-  for (const [x, z] of [[-0.08, 0.22], [0.08, 0.22], [-0.08, -0.22], [0.08, -0.22]]) {
-    const hip = new THREE.Group();
-    hip.position.set(x, 0.42, z);
-    body.add(hip);
-    part(box(0.06, 0.42, 0.06), fur, 0, -0.21, 0, hip);
-    legs.push(hip);
+  const legs: Leg[] = [];
+  // A trot: diagonal pairs together.
+  for (const [x, z, front, offset] of [[-0.07, 0.2, true, 0], [0.07, 0.2, true, 0.5], [-0.07, -0.2, false, 0.5], [0.07, -0.2, false, 0]] as const) {
+    const hip = k.joint(body, [x, 0.44, z]);
+    k.add(k.limb(front ? 0.04 : 0.05, 0.028, 0.22), fur, hip, [0, 0, 0]);
+    const knee = k.joint(hip, [0, -0.22, 0]);
+    k.add(k.limb(0.025, 0.022, 0.2), front ? pale : fur, knee, [0, 0, 0]);
+    k.add(k.ball(0.028), pale, knee, [0, -0.2, 0.015], { scale: [1, 0.6, 1.3] }); // paw
+    if (!front) {
+      hip.rotation.x = -0.2;
+      knee.rotation.x = 0.35;
+    }
+    legs.push({ hip, knee, front, offset });
   }
-  const tail = new THREE.Group();
-  tail.position.set(0, 0.6, -0.3);
-  body.add(tail);
-  const t = part(box(0.05, 0.05, 0.28), fur, 0, 0.1, -0.08, tail);
-  t.rotation.x = 0.9; // curled up over the back
-  return { mesh: g, body, legs, head: neck, tail };
+  // The curl: three joints bending up and over.
+  const tail: THREE.Object3D[] = [];
+  let parent: THREE.Object3D = k.joint(body, [0, 0.58, -0.22]);
+  for (let i = 0; i < 3; i++) {
+    tail.push(parent);
+    parent.rotation.x = i === 0 ? -2.2 : -0.7;
+    k.add(k.limb(0.035 - i * 0.006, 0.03 - i * 0.006, 0.1), fur, parent, [0, 0, 0]);
+    parent = k.joint(parent, [0, -0.1, 0]);
+  }
+  return { mesh, body, legs, neck, jaw, ears, tail };
 }
+
+const smooth = (a: number, b: number, x: number) => {
+  const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+const damp = (from: number, to: number, rate: number, dt: number) => from + (to - from) * (1 - Math.exp(-rate * dt));
 
 export function createAnimals(map: MapData, landmark: Landmark, groundAt: (x: number, z: number) => number, seed = 7): Animals {
   const spec = ANIMALS[landmark];
@@ -183,9 +315,30 @@ export function createAnimals(map: MapData, landmark: Landmark, groundAt: (x: nu
   const animals: Animal[] = [];
   const add = (kind: Kind) => {
     const coats = kind === "cow" ? spec.cowCoats : spec.dogCoats;
-    const m = (kind === "cow" ? makeCow : makeDog)(coats[Math.floor(rand() * coats.length)], owned, geos);
-    group.add(m.mesh);
-    animals.push({ kind, ...m, road: roads[0], dir: 1, p: 0, off: 0, mode: "stand", timer: 0, speed: 0, phase: rand() * 10, x: 0, z: 0, yaw: 0 });
+    const rig = (kind === "cow" ? makeCow : makeDog)(coats[Math.floor(rand() * coats.length)], owned, geos);
+    group.add(rig.mesh);
+    animals.push({
+      kind,
+      ...rig,
+      road: roads[0],
+      dir: 1,
+      p: 0,
+      off: 0,
+      mode: "stand",
+      timer: 0,
+      speed: 0,
+      pace: 0,
+      cycle: rand(),
+      lie: 0,
+      look: { pitch: 0, yaw: 0, toPitch: 0, toYaw: 0, timer: 0, grazing: false, atPlayer: false },
+      ear: { timer: rand() * 4, side: 0, t: 9 },
+      swish: { timer: rand() * 5, amp: 0, t: 0 },
+      t: rand() * 10,
+      x: 0,
+      z: 0,
+      yaw: 0,
+      yawRate: 0,
+    });
   };
   for (let i = 0; i < spec.cows; i++) add("cow");
   for (let i = 0; i < spec.dogs; i++) add("dog");
@@ -226,14 +379,16 @@ export function createAnimals(map: MapData, landmark: Landmark, groundAt: (x: nu
 
   function pose(a: Animal, dt: number, snap = false) {
     const road = net.roads[a.road];
-    if (a.mode === "walk") {
-      a.p += a.speed * dt;
-      if (a.p >= road.len) {
-        // Turn round at the end of the street rather than follow the traffic's turns.
-        a.dir = (-a.dir) as 1 | -1;
-        a.p = 0;
-        a.off = -a.off;
-      }
+    // It walks only once it's up, and eases into and out of its pace.
+    const wantPace = a.mode === "walk" && a.lie < 0.05 ? a.speed : 0;
+    a.pace = snap ? wantPace : damp(a.pace, wantPace, a.kind === "cow" ? 1.2 : 3, dt);
+    a.p += a.pace * dt;
+    if (a.p >= road.len) {
+      // At the end of the street it turns round (on the same side) and stands a while first.
+      a.dir = (-a.dir) as 1 | -1;
+      a.p = 0;
+      a.mode = "stand";
+      a.timer = 3 + rand() * 4;
     }
     const s = net.along(a.road, a.dir, a.p);
     const o = a.off * a.dir;
@@ -243,35 +398,168 @@ export function createAnimals(map: MapData, landmark: Landmark, groundAt: (x: nu
       a.x = tx;
       a.z = tz;
     } else {
-      const k = 1 - Math.exp(-dt * 4);
+      const k = 1 - Math.exp(-dt * 3);
       a.x += (tx - a.x) * k;
       a.z += (tz - a.z) * k;
     }
-    const want = Math.atan2(s.dx, s.dz);
-    let d = want - a.yaw;
+    let d = Math.atan2(s.dx, s.dz) - a.yaw;
     d = Math.atan2(Math.sin(d), Math.cos(d));
-    a.yaw += snap ? d : d * Math.min(1, dt * 2);
+    // Lying down it stays as it is; otherwise it turns at an animal's pace, not a turret's.
+    const turn = snap ? d : a.lie > 0.05 ? 0 : Math.max(-GAIT[a.kind].turn * dt, Math.min(GAIT[a.kind].turn * dt, d * Math.min(1, dt * 2.5)));
+    a.yaw += turn;
+    a.yawRate = dt > 0 ? turn / dt : 0;
     a.mesh.position.set(a.x, groundAt(a.x, a.z), a.z);
     a.mesh.rotation.y = a.yaw;
   }
 
-  function animate(a: Animal, dt: number) {
-    a.phase += dt * (a.mode === "walk" ? a.speed * (a.kind === "cow" ? 3.2 : 7) : 1);
-    const walking = a.mode === "walk" ? 1 : 0;
-    const lying = a.mode === "lie";
-    const stride = a.kind === "cow" ? 0.35 : 0.6;
-    a.legs.forEach((leg, i) => {
-      // Diagonal pairs together, as a walking quadruped's legs go.
-      const sign = i === 0 || i === 3 ? 1 : -1;
-      leg.rotation.x = lying ? (i < 2 ? -1.3 : 1.3) : Math.sin(a.phase) * stride * walking * sign;
-      leg.visible = true;
+  /** Where the head goes next: bouts of grazing and of looking about, and at you when you're close. */
+  function nextLook(a: Animal, focus: THREE.Vector3) {
+    const l = a.look;
+    const dx = focus.x - a.x;
+    const dz = focus.z - a.z;
+    const near = Math.hypot(dx, dz) < (a.kind === "cow" ? 9 : 12);
+    let rel = Math.atan2(dx, dz) - a.yaw;
+    rel = Math.atan2(Math.sin(rel), Math.cos(rel));
+    l.atPlayer = near && Math.abs(rel) < 2 && rand() < 0.7;
+    l.grazing = false;
+    if (a.mode === "walk") {
+      l.toPitch = a.kind === "cow" ? 0.15 : 0.1;
+      l.toYaw = (rand() - 0.5) * 0.3;
+      l.timer = 2 + rand() * 3;
+    } else if (a.mode === "lie") {
+      l.toPitch = a.kind === "cow" ? -0.05 : 0.45;
+      l.toYaw = (rand() - 0.5) * 1.2;
+      l.timer = 4 + rand() * 6;
+    } else if (a.kind === "cow" && !l.atPlayer && rand() < 0.65) {
+      l.grazing = true;
+      l.toPitch = 0.95;
+      l.toYaw = (rand() - 0.5) * 0.6;
+      l.timer = 4 + rand() * 7;
+    } else {
+      l.toPitch = a.kind === "cow" ? 0.05 + rand() * 0.15 : -0.1 + rand() * 0.3;
+      l.toYaw = (rand() - 0.5) * 1.1;
+      l.timer = 2 + rand() * 4;
+    }
+    if (l.atPlayer) {
+      l.toYaw = Math.max(-1, Math.min(1, rel));
+      l.toPitch = Math.min(l.toPitch, 0.1);
+      l.timer = 2 + rand() * 3;
+    }
+  }
+
+  function animate(a: Animal, dt: number, focus: THREE.Vector3) {
+    const g = GAIT[a.kind];
+    a.t += dt;
+
+    // Lying down and getting up: a cow goes down on its front knees first,
+    // then the hind end; it gets up hind end first. A dog just drops.
+    const wantLie = a.mode === "lie" && a.pace < 0.05 ? 1 : 0;
+    a.lie = damp(a.lie, wantLie, a.kind === "cow" ? 0.9 : 2.5, dt);
+    const frontDown = smooth(0, 0.6, a.lie);
+    const hindDown = smooth(0.35, 1, a.lie);
+
+    // The stride: its rate set by the pace so a foot on the ground stays put;
+    // a turn on the spot is stepped round, not spun.
+    const shuffle = Math.abs(a.yawRate) * (a.kind === "cow" ? 0.7 : 0.25);
+    const v = Math.max(a.pace, shuffle);
+    a.cycle = (a.cycle + (v * g.duty * dt) / (2 * g.leg * Math.sin(g.swing))) % 1;
+    const w = Math.min(1, v / (a.kind === "cow" ? 0.25 : 0.5)) * (1 - a.lie);
+
+    for (const leg of a.legs) {
+      const u = (a.cycle + leg.offset) % 1;
+      let swing: number;
+      let lift = 0;
+      if (u < g.duty) swing = g.swing * (1 - (2 * u) / g.duty);
+      else {
+        const f = (u - g.duty) / (1 - g.duty);
+        swing = -g.swing + 2 * g.swing * f * f * (3 - 2 * f);
+        lift = Math.sin(Math.PI * f);
+      }
+      // rotation.x > 0 swings the foot back; the stride runs forward to back.
+      const stand = leg.front ? [0, 0] : a.kind === "cow" ? [-0.12, 0.22] : [-0.2, 0.35];
+      const down = leg.front ? frontDown : hindDown;
+      const [hipLie, kneeLie] = leg.front ? [g.fold[0], g.fold[1]] : [g.fold[2], g.fold[3]];
+      const hipWalk = stand[0] - swing * w - lift * w * (leg.front ? 0.15 : 0.05);
+      const kneeWalk = stand[1] + lift * w * (leg.front ? 0.95 : 0.7);
+      leg.hip.rotation.x = hipWalk + (hipLie - hipWalk) * down;
+      leg.knee.rotation.x = kneeWalk + (kneeLie - kneeWalk) * down;
+      // Lying, the hind legs go out to one side.
+      leg.hip.rotation.z = leg.front ? 0 : hindDown * (a.kind === "cow" ? 0.35 : 0.2) * (leg.hip.position.x > 0 ? 1 : -1);
+    }
+
+    // The body: sinking as it lies (front first), a walk's bob and sway,
+    // and breathing, slower and deeper lying down.
+    const bob = Math.cos(a.cycle * Math.PI * 4) * (a.kind === "cow" ? 0.02 : 0.015) * w;
+    a.body.position.y = -g.low * (frontDown + hindDown) * 0.5 + bob;
+    a.body.rotation.x = (frontDown - hindDown) * (a.kind === "cow" ? 0.28 : 0.1);
+    a.body.rotation.z = Math.sin(a.cycle * Math.PI * 2) * 0.025 * w + hindDown * 0.08;
+    const breath = 1 + Math.sin(a.t * (a.lie > 0.5 ? 1.4 : 1.9)) * (a.kind === "cow" ? 0.012 : 0.02);
+    a.body.scale.set(breath, 1, 1);
+
+    // The head: eases toward where it's looking; grazing, it nibbles and steps its muzzle along.
+    const l = a.look;
+    l.timer -= dt;
+    if (l.timer <= 0) nextLook(a, focus);
+    if (l.atPlayer) {
+      let rel = Math.atan2(focus.x - a.x, focus.z - a.z) - a.yaw;
+      rel = Math.atan2(Math.sin(rel), Math.cos(rel));
+      l.toYaw = Math.max(-1, Math.min(1, rel));
+    }
+    const headRate = a.kind === "cow" ? 1.6 : 4;
+    l.pitch = damp(l.pitch, l.toPitch, headRate, dt);
+    l.yaw = damp(l.yaw, l.toYaw, headRate * 0.8, dt);
+    const nod = Math.sin(a.cycle * Math.PI * 4) * 0.07 * w;
+    const nibble = l.grazing ? Math.max(0, Math.sin(a.t * 2.3)) * 0.08 + Math.sin(a.t * 0.37) * 0.12 : 0;
+    a.neck.rotation.x = l.pitch + nod + nibble;
+    a.neck.rotation.y = l.yaw + (l.grazing ? Math.sin(a.t * 0.29) * 0.25 : 0);
+
+    // Chewing: always, for a cow; a dog's jaw only moves when it pants.
+    if (a.jaw) {
+      a.jaw.rotation.x =
+        a.kind === "cow"
+          ? (l.grazing || a.lie > 0.5 ? 1 : 0.3) * (0.06 + Math.sin(a.t * 5.5) * 0.06)
+          : a.pace > 1 || (a.mode === "stand" && a.t % 20 < 8) ? 0.25 + Math.sin(a.t * 14) * 0.08 : 0;
+    }
+
+    // An ear flicks, now and then; a dog's prick up when you're near.
+    const e = a.ear;
+    e.timer -= dt;
+    if (e.timer <= 0) {
+      e.timer = (a.kind === "cow" ? 1.5 : 3) + rand() * 5;
+      e.side = rand() < 0.5 ? 0 : 1;
+      e.t = 0;
+    }
+    e.t += dt;
+    const flick = Math.exp(-e.t * 9) * Math.sin(e.t * 40) * 0.5;
+    a.ears.forEach((ear, i) => {
+      const s = i === 0 ? -1 : 1;
+      const base = a.kind === "cow" ? -s * 0.5 : -s * 0.25;
+      ear.rotation.z = base + (i === e.side ? flick * s : 0);
+      ear.rotation.x = i === e.side ? Math.abs(flick) * 0.6 : 0;
     });
-    const low = a.kind === "cow" ? 0.62 : 0.3;
-    a.body.position.y = lying ? -low : 0;
-    // Grazing: head down to the ground while standing; up otherwise.
-    const graze = a.kind === "cow" && a.mode === "stand" ? 0.75 + Math.sin(a.phase * 0.7) * 0.1 : a.kind === "dog" && a.mode === "stand" ? 0.25 : 0;
-    a.head.rotation.x = graze;
-    a.tail.rotation.z = Math.sin(a.phase * (a.kind === "dog" && !lying ? 6 : 1.3)) * (a.kind === "dog" ? 0.5 : 0.25);
+
+    // The tail: a cow's hangs and swishes at flies in bouts, the swing running down it;
+    // a dog's curl wags when it trots or when you're about.
+    const sw = a.swish;
+    sw.timer -= dt;
+    if (sw.timer <= 0) {
+      sw.timer = 3 + rand() * 8;
+      sw.amp = a.kind === "cow" ? 0.35 + rand() * 0.35 : 0.25 + rand() * 0.2;
+    }
+    sw.amp = damp(sw.amp, 0, a.kind === "cow" ? 0.6 : 0.3, dt);
+    sw.t += dt;
+    if (a.kind === "cow") {
+      a.tail.forEach((seg, i) => {
+        seg.rotation.z = Math.sin(sw.t * 2.4 - i * 0.7) * sw.amp * (0.6 + i * 0.35);
+        // Lying, it drops to the ground and the end lies out behind.
+        const hang = [0.3 - hindDown * 0.2, hindDown * 0.2, hindDown * 1.2][i];
+        seg.rotation.x = hang + (i === 0 ? Math.sin(a.cycle * Math.PI * 2) * 0.05 * w : 0);
+      });
+    } else {
+      const wag = (a.pace > 0.5 ? 0.3 : 0) + sw.amp + (a.lie > 0.5 ? -0.2 : 0);
+      a.tail[0].rotation.z = Math.sin(sw.t * 11) * Math.max(0, wag);
+      a.tail[0].rotation.x = -2.2 + a.lie * 1.2;
+    }
   }
 
   return {
@@ -289,7 +577,7 @@ export function createAnimals(map: MapData, landmark: Landmark, groundAt: (x: nu
         a.timer -= dt;
         if (a.timer <= 0) choose(a);
         pose(a, dt);
-        animate(a, dt);
+        animate(a, dt, focus);
       }
     },
     inRoad() {
