@@ -25,8 +25,12 @@ import { flatPolygon } from "./areas";
 import type { CollisionWorld } from "./collide";
 
 const TILE = 48;
-const NEAR = 105;
-const FAR = NEAR + 45;
+/** How far round the player buildings are drawn in full; beyond, they're
+ *  massing boxes. A still from the game (the city covers) raises it so a
+ *  long view is built all the way out. */
+export const DETAIL = { near: 105 };
+/** Dropped back to boxes this much further out than they're built. */
+const HYSTERESIS = 45;
 /** Detail generation budget per frame, milliseconds. */
 const BUDGET_MS = 4;
 
@@ -568,10 +572,10 @@ export function buildBuildings(
     const start = performance.now();
     const dist = (t: Tile) => Math.hypot(t.cx - focus.x, t.cz - focus.z);
     for (const t of list) {
-      if (t.state !== "far" && dist(t) > FAR) drop(t);
+      if (t.state !== "far" && dist(t) > DETAIL.near + HYSTERESIS) drop(t);
     }
     const wanted = list
-      .filter((t) => t.state !== "near" && dist(t) < NEAR)
+      .filter((t) => t.state !== "near" && dist(t) < DETAIL.near)
       .sort((a, b) => dist(a) - dist(b));
     for (const t of wanted) {
       t.state = "building";
