@@ -22,6 +22,7 @@ import {
   TrainFront,
   type LucideIcon,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import type { ErrandIconId } from "./mapKit";
 
 /** A Bajaj RE side-on, nose to the left: the apron sloping down to the
@@ -100,7 +101,7 @@ export function ErrandIcon({
 export function ErrandBadge({ id, colour, className }: { id: ErrandIconId; colour: string; className?: string }) {
   return (
     <span
-      className={`inline-flex size-5 shrink-0 items-center justify-center rounded-full shadow-[1px_1.5px_0_rgba(0,0,0,0.4)] ring-1 ring-white/55 ${className ?? ""}`}
+      className={cn("inline-flex size-5 shrink-0 items-center justify-center rounded-full shadow-[1px_1.5px_0_rgba(0,0,0,0.4)] ring-1 ring-white/55", className)}
       style={{ background: colour }}
     >
       <ErrandIcon id={id} className="size-3" strokeWidth={2.25} color="#ffffff" />

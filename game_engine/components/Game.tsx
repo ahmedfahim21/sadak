@@ -100,7 +100,6 @@ export default function GameShell() {
   const [cash, setCash] = useState(0);
   const [xp, setXp] = useState(0);
   const [completed, setCompleted] = useState<Set<string>>(new Set());
-  const [artifacts, setArtifacts] = useState<string[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [phrasesOpen, setPhrasesOpen] = useState(false);
@@ -227,7 +226,6 @@ export default function GameShell() {
         setCash(saved.cash);
         setXp(saved.xp);
         setCompleted(new Set(saved.completedTaskIds));
-        setArtifacts([]);
         setNpcMemory({});
         metRef.current = new Set();
         posthog.capture("district_entered", {
@@ -513,9 +511,6 @@ export default function GameShell() {
 
       setCompleted(nextCompleted);
       setCash(nextCash);
-      setArtifacts((prev) =>
-        prev.includes(task.completionNote) ? prev : [...prev, task.completionNote]
-      );
       gameRef.current?.markDone(taskId);
       playSfx("cash");
       posthog.capture("errand_completed", {
@@ -572,7 +567,6 @@ export default function GameShell() {
     setCash(0);
     setXp(0);
     setCompleted(new Set());
-    setArtifacts([]);
     setToast(null);
     setMenuOpen(false);
     setPhrasesOpen(false);
@@ -627,7 +621,6 @@ export default function GameShell() {
         live={live}
         cash={cash}
         xp={xp}
-        artifacts={artifacts}
         completed={completed}
         errandProgress={{ done: errandsDone, total: tasks.length }}
         onOpen={openTalk}

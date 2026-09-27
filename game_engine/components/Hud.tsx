@@ -19,7 +19,7 @@ import {
 import { cn } from "@/lib/utils";
 import { css, entrances, kindColour, renderStreetMap, taskLook, type Waypoint } from "@/components/map/mapKit";
 import { drawBlip, drawDoor, drawPin, drawRoute, pinToEdge } from "@/components/map/blips";
-import { ErrandIcon } from "@/components/map/errandIcons";
+import { ErrandBadge } from "@/components/map/errandIcons";
 import type { Landmark } from "@/lib/game/assets";
 import { roadLabels, type RoadLabel } from "@/lib/game/world/mapLabels";
 import { LocationCard } from "@/components/map/LocationCard";
@@ -336,70 +336,81 @@ function HudCard({
   );
 }
 
-function ErrandsList({
+/**
+ * The errands, in one list: each with its marker (its colour and icon, as on
+ * the maps) and how far away it is, the nearest picked out; a finished one
+ * turns to a tick and says what came of it. Progress sits in its header.
+ */
+function Errands({
   tasks,
   completed,
   city,
+  tel,
   compact,
 }: {
   tasks: StreetTask[];
   completed: Set<string>;
   city: Landmark;
+  tel: Telemetry | null;
   compact?: boolean;
 }) {
+  const done = tasks.filter((t) => completed.has(t.id)).length;
+  const away = (id: string) => {
+    const at = tel?.tasks.find((s) => s.id === id);
+    return at && tel ? Math.hypot(at.x - tel.playerX, at.z - tel.playerZ) : null;
+  };
+  const open = tasks.filter((t) => !completed.has(t.id));
+  const nearest = open.reduce<{ id: string; d: number } | null>((best, t) => {
+    const d = away(t.id);
+    return d !== null && (!best || d < best.d) ? { id: t.id, d } : best;
+  }, null);
   return (
-    <div className={cn("space-y-2", compact && "space-y-1.5")}>
-      {tasks.map((t) => {
-        const done = completed.has(t.id);
-        return (
-          <div key={t.id} className={cn("flex gap-2", done && "opacity-50 line-through")}>
-            <span
-              className={cn(
-                "mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md border border-border text-xs",
-                done ? "bg-chart-4/20" : "bg-main/10",
-                compact && "size-5 text-[0.65rem]"
-              )}
-              // The errand's own colour, as on its marker and its map dot.
-              style={{ borderColor: css(t.colour), borderWidth: 2, background: `${css(t.colour)}33` }}
-              aria-hidden
-            >
-              <ErrandIcon id={taskLook(t, city).icon} className={cn("size-3.5", compact && "size-3")} />
-            </span>
-            <div>
-              <strong className={cn("block text-sm", compact && "text-xs")}>{t.title}</strong>
-              <em
+    <>
+      <CardHeader className={cn("gap-1.5 pb-0", compact ? "px-3" : "px-4")}>
+        <CardTitle className={cn("flex items-baseline justify-between uppercase tracking-widest text-main", compact ? "text-[0.65rem]" : "text-xs")}>
+          Errands
+          <span className="normal-case tracking-normal text-foreground/70">
+            {done === tasks.length && tasks.length > 0 ? "All done" : `${done} of ${tasks.length}`}
+          </span>
+        </CardTitle>
+        <div className="h-1 overflow-hidden rounded-full bg-foreground/10" aria-hidden>
+          <div className="h-full rounded-full bg-main transition-[width] duration-700" style={{ width: `${tasks.length ? (done / tasks.length) * 100 : 0}%` }} />
+        </div>
+      </CardHeader>
+      <CardContent className={cn("pt-1", compact ? "px-2" : "px-3")}>
+        <ul className="grid gap-0.5">
+          {tasks.map((t) => {
+            const finished = completed.has(t.id);
+            const d = finished ? null : away(t.id);
+            const next = nearest?.id === t.id;
+            const look = taskLook(t, city);
+            return (
+              <li
+                key={t.id}
                 className={cn(
-                  "text-xs not-italic text-foreground/70",
-                  compact && "text-[0.65rem]"
+                  "flex items-center gap-2 rounded-base px-1.5 py-1 transition-colors",
+                  next && "bg-main/15",
+                  finished && "opacity-60"
                 )}
               >
-                {taskLook(t, city).label} · {t.name}
-              </em>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function ArtifactsList({ artifacts }: { artifacts: string[] }) {
-  if (artifacts.length === 0) {
-    return (
-      <p className="text-xs italic text-foreground/70">
-        Walk the map — autos, stalls, temples, buses.
-      </p>
-    );
-  }
-  return (
-    <ol className="grid list-none gap-2">
-      {artifacts.map((c, i) => (
-        <li key={i} className="flex gap-2 text-xs">
-          <span className="font-heading text-main">{i + 1}</span>
-          {c}
-        </li>
-      ))}
-    </ol>
+                <ErrandBadge id={finished ? "done" : look.icon} colour={css(t.colour)} className={compact ? "size-4" : undefined} />
+                <span className="min-w-0 flex-1">
+                  <span className={cn("block truncate", compact ? "text-xs" : "text-sm")}>{t.title}</span>
+                  <span className={cn("block truncate text-foreground/65", compact ? "text-[0.65rem]" : "text-xs")}>
+                    {finished ? t.completionNote : `${look.label} · ${t.name}`}
+                  </span>
+                </span>
+                {d !== null && (
+                  <span className={cn("shrink-0 tabular-nums text-foreground/65", compact ? "text-[0.65rem]" : "text-xs", next && "text-foreground")}>
+                    {d < 1000 ? `${Math.round(d / 10) * 10} m` : `${(d / 1000).toFixed(1)} km`}
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </CardContent>
+    </>
   );
 }
 
@@ -411,7 +422,6 @@ export default function Hud({
   cash,
   xp,
   live,
-  artifacts,
   completed,
   errandProgress,
   onOpen,
@@ -452,7 +462,6 @@ export default function Hud({
   live: LiveState | null;
   cash: number;
   xp: number;
-  artifacts: string[];
   completed: Set<string>;
   errandProgress: { done: number; total: number };
   onOpen: () => void;
@@ -480,8 +489,9 @@ export default function Hud({
       <Badge variant="neutral" className={mobilePlay ? "text-xs" : undefined}>
         {xp} XP
       </Badge>
+      {/* On a wide screen the errands card carries the progress. */}
       {errandProgress.total > 0 && (
-        <div className="flex items-center gap-2">
+        <div className={cn("flex items-center gap-2", !mobilePlay && "min-[621px]:hidden")}>
           <ProgressRing done={errandProgress.done} total={errandProgress.total} />
           <span className="text-xs text-foreground/70">
             {errandProgress.done === errandProgress.total
@@ -570,24 +580,7 @@ export default function Hud({
                 </CardContent>
               </HudCard>
               <HudCard className="py-2">
-                <CardHeader className="px-3 pb-0">
-                  <CardTitle className="text-[0.65rem] uppercase tracking-widest text-main">
-                    Errands
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="px-3 pt-0">
-                  <ErrandsList tasks={tasks} completed={completed} city={district.theme.landmark} compact />
-                </CardContent>
-              </HudCard>
-              <HudCard className="py-2">
-                <CardHeader className="px-3 pb-0">
-                  <CardTitle className="text-[0.65rem] uppercase tracking-widest text-main">
-                    Done · {artifacts.length}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="px-3 pt-0">
-                  <ArtifactsList artifacts={artifacts} />
-                </CardContent>
+                <Errands tasks={tasks} completed={completed} city={district.theme.landmark} tel={tel} compact />
               </HudCard>
             </div>
           )}
@@ -676,24 +669,8 @@ export default function Hud({
             </HudCard>
           )}
 
-          <HudCard className="absolute top-32 left-6 w-60 max-w-[calc(100vw-3rem)] max-[620px]:hidden max-lg:top-20 max-lg:w-48 max-lg:text-xs">
-            <CardHeader className="px-4 pb-0">
-              <CardTitle className="text-xs uppercase tracking-widest text-main">Errands</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 px-4 pt-0">
-              <ErrandsList tasks={tasks} completed={completed} city={district.theme.landmark} />
-            </CardContent>
-          </HudCard>
-
-          <HudCard className="absolute bottom-6 left-6 w-72 max-w-[calc(100vw-3rem)] max-lg:hidden">
-            <CardHeader className="px-4 pb-0">
-              <CardTitle className="text-xs uppercase tracking-widest text-main">
-                Done · {artifacts.length}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="px-4 pt-0">
-              <ArtifactsList artifacts={artifacts} />
-            </CardContent>
+          <HudCard className="absolute top-32 left-6 w-72 max-w-[calc(100vw-3rem)] max-[620px]:hidden max-lg:top-20 max-lg:w-60">
+            <Errands tasks={tasks} completed={completed} city={district.theme.landmark} tel={tel} compact={false} />
           </HudCard>
 
           <div className="absolute right-6 bottom-6 max-lg:origin-bottom-right max-lg:scale-90">
