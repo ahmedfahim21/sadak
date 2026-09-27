@@ -367,7 +367,7 @@ function Errands({
   return (
     <>
       <CardHeader className={cn("gap-1.5 pb-0", compact ? "px-3" : "px-4")}>
-        <CardTitle className={cn("flex items-baseline justify-between uppercase tracking-widest text-main", compact ? "text-[0.65rem]" : "text-xs")}>
+        <CardTitle className={cn("flex items-baseline justify-between uppercase tracking-widest text-foreground/60", compact ? "text-[0.65rem]" : "text-xs")}>
           Errands
           <span className="normal-case tracking-normal text-foreground/70">
             {done === tasks.length && tasks.length > 0 ? "All done" : `${done} of ${tasks.length}`}
@@ -567,7 +567,7 @@ export default function Hud({
             <div className="pointer-events-auto absolute top-[7.5rem] left-3 z-20 flex max-h-[min(52vh,22rem)] w-[min(18rem,calc(100vw-5.5rem))] flex-col gap-2 overflow-y-auto">
               <HudCard className="py-2">
                 <CardHeader className="px-3 pb-0">
-                  <CardTitle className="text-[0.65rem] uppercase tracking-widest text-main">
+                  <CardTitle className="text-[0.65rem] uppercase tracking-widest text-foreground/60">
                     {district.name} · {district.native}
                   </CardTitle>
                 </CardHeader>
