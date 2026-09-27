@@ -399,12 +399,17 @@ export function buildBuildings(
     return t;
   };
 
-  // Far geometry per tile, plus colliders for everything.
+  // Far geometry per tile, plus colliders for everything. Only plots on a
+  // street front get detail up close, so only they are swapped out: the
+  // plots behind them (lanes, courtyards) keep their far block for good.
+  // Hiding those with the rest left their colliders standing on nothing.
   const farBufs = new Map<Tile, Buf>();
+  const backBufs = new Map<Tile, Buf>();
   for (const p of map.plots) {
     const t = tileOf(p.x, p.z);
-    if (!farBufs.has(t)) farBufs.set(t, newBuf());
-    farPlot(farBufs.get(t)!, p, theme);
+    const bufs = p.front ? farBufs : backBufs;
+    if (!bufs.has(t)) bufs.set(t, newBuf());
+    farPlot(bufs.get(t)!, p, theme);
     if (p.front) t.plots.push(p);
     collide.box(p.x, p.z, p.w / 2, p.d / 2, p.rot);
   }
@@ -415,6 +420,14 @@ export function buildBuildings(
     m.castShadow = true;
     m.receiveShadow = true;
     t.far = m;
+    group.add(m);
+  }
+  for (const b of backBufs.values()) {
+    const g = bufGeometry(b);
+    if (!g) continue;
+    const m = new THREE.Mesh(g, farMat);
+    m.castShadow = true;
+    m.receiveShadow = true;
     group.add(m);
   }
 

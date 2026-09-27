@@ -106,12 +106,15 @@ function fit(model: THREE.Group, w: number, d: number, maxScale = 3, solids?: So
 
 
 /** The cinema's hall (makeArtDecoCinema: a 9 x 6m block and the 3m-radius
- *  Deco curve at its west end, stepped in two boxes inside the curve); the
- *  forecourt under the marquee, out to its front posts, is open. */
+ *  Deco curve at its west end, stepped in three boxes that stay inside the
+ *  curve: at half-heights 1, 2 and 2.6 the wall is at x = -4.5 - sqrt(9 - z²));
+ *  the forecourt under the marquee, out to its front posts, is open. Boxes
+ *  reaching past the curve were walls of air at its shoulders. */
 const CINEMA_HALL: Solid[] = [
   [-4.5, -3.0, 4.5, 3.2],
-  [-7.4, -1.5, -4.5, 1.5],
-  [-6.8, -2.6, -4.5, 2.6],
+  [-7.33, -1, -4.5, 1],
+  [-6.74, -2, -4.5, 2],
+  [-6.0, -2.6, -4.5, 2.6],
 ];
 
 /** Builds the model for one landmark, in its local frame. */
@@ -200,7 +203,12 @@ export function buildLandmark(l: MapLandmark, city: Landmark, clear?: ClearTest)
         // The boom and net reach out over the water, off the landmark's back.
         net.group.rotation.y = Math.PI;
         g.add(net.group);
-        colliders.push({ ...net.colliders[0], x: net.group.position.x });
+        // Only the shore end stands on the ground (the pivot, its platform,
+        // the counterweight stones); the boom and net hang over the water,
+        // which blocks on its own. A box over the whole reach was a wall of
+        // air across the promenade.
+        const c = net.colliders[0];
+        colliders.push({ x: net.group.position.x, z: c.z + c.hd - 1.3, hw: c.hw, hd: 1.3 });
       }
       return { group: g, colliders, heights: [] };
     }

@@ -856,3 +856,56 @@ test("a gateway mapped on its road stands across it, the road through its arches
     assert.ok(along > 0.95, `${name}'s arches open ${Math.round((Math.acos(along) * 180) / Math.PI)}° off its road`);
   }
 });
+
+test("crowd walkers never jump: they turn corners on their own side, and come back in only out of sight", async () => {
+  const { SPAWN_MIN } = await import("./crowd");
+  const map = loadMap("purani-sadak");
+  const crowd = createCrowd({ landmark: "delhi", map, groundAt: () => 0.2, blocked: () => false, gatherings: [], walkers: 60 });
+  const torso = crowd.group.children[2] as THREE.InstancedMesh;
+  const focus = new THREE.Vector3(150, 0, -318);
+  crowd.prime(focus);
+  const m = new THREE.Matrix4();
+  const at = (i: number) => new THREE.Vector3().setFromMatrixPosition((torso.getMatrixAt(i, m), m));
+  let last = Array.from({ length: crowd.count }, (_, i) => at(i));
+  const dt = 1 / 30;
+  for (let f = 0; f < 30 * 60; f++) {
+    // The player walks west down Chandni Chowk, leaving people behind.
+    focus.x -= 3 * dt;
+    crowd.update(dt, focus);
+    const now = Array.from({ length: crowd.count }, (_, i) => at(i));
+    now.forEach((p, i) => {
+      const jump = Math.hypot(p.x - last[i].x, p.z - last[i].z);
+      if (jump < 0.6) return;
+      const d = Math.hypot(p.x - focus.x, p.z - focus.z);
+      // Anything bigger is a recycle, and lands out of sight (the spawn
+      // distance is checked on the street's line; the footpath is a few
+      // metres to one side of it).
+      assert.ok(d >= SPAWN_MIN - 6, `frame ${f}: person ${i} jumped ${jump.toFixed(1)}m to ${d.toFixed(0)}m from the player`);
+    });
+    last = now;
+  }
+});
+
+test("with detail streamed in round the player, every plot near them is still drawn (no colliders on nothing)", async () => {
+  const { buildWorld } = await import("./world");
+  const map = loadMap("purani-sadak");
+  const d = SEED_DISTRICTS.find((x) => x.id === "purani-sadak")!;
+  const world = buildWorld(map, d, { vehicleMats: createVehicleMaterials(), transitMat: createTransitMaterial(), toon: (m) => m });
+  const focus = new THREE.Vector3(150, 0, -127);
+  world.prime(focus);
+  world.group.updateMatrixWorld(true);
+  const solids: THREE.Object3D[] = [];
+  world.group.traverse((o) => {
+    let visible = true;
+    for (let q: THREE.Object3D | null = o; q; q = q.parent) visible &&= q.visible;
+    if ((o as THREE.Mesh).isMesh && visible) solids.push(o);
+  });
+  const ray = new THREE.Raycaster();
+  const near = map.plots.filter((p) => Math.hypot(p.x - focus.x, p.z - focus.z) < 90);
+  assert.ok(near.length > 50, `${near.length} plots`);
+  const bare = near.filter((p) => {
+    ray.set(new THREE.Vector3(p.x, 80, p.z), new THREE.Vector3(0, -1, 0));
+    return !ray.intersectObjects(solids, false).some((h) => h.point.y > 2);
+  });
+  assert.deepEqual(bare.map((p) => `${p.x.toFixed(0)},${p.z.toFixed(0)}${p.front ? " front" : ""}`), []);
+});
