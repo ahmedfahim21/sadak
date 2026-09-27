@@ -310,10 +310,6 @@ export function MinimapPanel({
           M
         </kbd>
       )}
-      {/* ODbL requires the attribution wherever the map data is shown. */}
-      <span className="pointer-events-none absolute bottom-0.5 left-1 text-[8px] leading-none text-white/70">
-        © OpenStreetMap contributors
-      </span>
       <Button
         variant="neutral"
         size="icon"
