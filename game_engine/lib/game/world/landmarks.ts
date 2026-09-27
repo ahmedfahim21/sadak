@@ -117,16 +117,11 @@ const CINEMA_HALL: Solid[] = [
   [-6.0, -2.6, -4.5, 2.6],
 ];
 
-/** What of a Chinese fishing net stands on the ground (makeChineseFishingNet,
- *  its own frame, measured): the pivot's two posts and the pile of
- *  counterweight stones. Everything else at body height is thin frame and
- *  rope; the boom and the net are overhead or over the water, which blocks
- *  on its own. A box over the whole reach, or over the net's end, was air. */
-const FISHING_NET_GROUND: Solid[] = [
-  [-1.12, -0.22, -0.83, 0.08],
-  [0.83, -0.22, 1.12, 0.08],
-  [-0.4, 8.95, 0.4, 9.6],
-];
+/** What of a Chinese fishing net stands at body height (makeChineseFishingNet,
+ *  its own frame): the laterite footing its gantry stands on. The stones
+ *  hang high enough to walk under; the boom and the net are overhead or out
+ *  over the water, which blocks on its own. */
+const FISHING_NET_GROUND: Solid[] = [[-1.35, -1.15, 1.35, 1.15]];
 
 /** Builds the model for one landmark, in its local frame. */
 export function buildLandmark(l: MapLandmark, city: Landmark, clear?: ClearTest): Monument {

@@ -91,6 +91,8 @@ function adapt(mats?: MaterialLibrary): AssetMaterialLib | undefined {
         mat.transparent = true;
         mat.opacity = opts.opacity ?? mat.opacity;
       }
+      // A net or a cloth seen from both sides.
+      if (opts.side !== undefined) mat.side = opts.side;
       if (opts.emissive) {
         mat.emissive = new THREE.Color(opts.emissive as THREE.ColorRepresentation);
         mat.emissiveIntensity = opts.emissiveIntensity ?? 1;
