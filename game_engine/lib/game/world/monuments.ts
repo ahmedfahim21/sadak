@@ -12,6 +12,7 @@
 
 import * as THREE from "three";
 import { Parts, archedSlab, onion, stripedShaft } from "./vc";
+import { mulberry32 } from "../props";
 
 export type LocalBox = { x: number; z: number; hw: number; hd: number; rot?: number };
 /** Height from y0 at the local -z edge to y1 at +z (flat when equal). */
@@ -1075,26 +1076,110 @@ export function parkedBus(P: Parts, x: number, z: number, len: number, livery: {
   }
 }
 
-/** A seafront promenade: sea wall, benches and lamps along the long side. */
+/**
+ * A seafront square (Fort Kochi's Vasco da Gama Square): laterite paving
+ * to a stone parapet and iron railing over the water (local -z), a rain
+ * tree spreading over a round planter you can sit on, benches facing the
+ * sea, the seafood stalls under blue tarps where the catch is laid out on
+ * ice to be picked and fried, a tender-coconut cart, and lamp posts.
+ */
 export function promenade(w: number, d: number): Monument {
   const P = new Parts();
   const C: LocalBox[] = [];
-  const wallZ = -d / 2 + 0.4;
-  P.box(w, 0.9, 0.5, 0, 0.45, wallZ, 0xd8cfbd);
-  C.push({ x: 0, z: wallZ, hw: w / 2, hd: 0.3 });
-  const n = Math.max(2, Math.floor(w / 8));
-  for (let k = 0; k < n; k++) {
-    const x = -w / 2 + (w * (k + 0.5)) / n;
-    // Bench facing the water.
-    P.box(1.8, 0.1, 0.5, x, 0.45, wallZ + 1.2, 0x8a5a2b);
-    P.box(1.8, 0.45, 0.08, x, 0.7, wallZ + 1.45, 0x8a5a2b);
-    for (const s of [-0.8, 0.8]) P.box(0.08, 0.45, 0.45, x + s, 0.22, wallZ + 1.2, 0x3a3d42);
-    C.push({ x, z: wallZ + 1.2, hw: 0.9, hd: 0.3 });
-    if (k % 2 === 0) {
-      P.cyl(0.07, 0.09, 4.2, x + 3, 2.1, wallZ + 0.9, 0x2e5a3a, 6);
-      P.add(new THREE.SphereGeometry(0.28, 8, 6).translate(x + 3, 4.4, wallZ + 0.9), 0xfff3c8);
-      C.push({ x: x + 3, z: wallZ + 0.9, hw: 0.15, hd: 0.15 });
+  const rand = mulberry32(Math.round(w * 131 + d * 17));
+  const PAVE = 0xa8644a;
+  const PAVE_LIGHT = 0xc9a07e;
+  const STONE = 0xd8cfbd;
+  const IRON = 0x2b2f33;
+  const WOOD = 0x8a5a2b;
+
+  // Paving, with lighter bands every couple of metres.
+  P.box(w, 0.06, d, 0, 0.03, 0, PAVE);
+  for (let x = -w / 2 + 2; x < w / 2; x += 2.2) P.box(0.18, 0.065, d, x, 0.035, 0, PAVE_LIGHT);
+  P.box(w, 0.07, 0.35, 0, 0.035, d / 2 - 0.18, PAVE_LIGHT);
+
+  // The sea edge: a stone parapet and an iron railing on it.
+  const edge = -d / 2 + 0.3;
+  P.box(w, 0.55, 0.5, 0, 0.275, edge, STONE);
+  P.box(w + 0.1, 0.08, 0.6, 0, 0.58, edge, 0xe8e1d2);
+  for (let x = -w / 2 + 0.2; x <= w / 2 - 0.1; x += 1.2) P.cyl(0.03, 0.03, 0.55, x, 0.88, edge, IRON, 6);
+  for (const y of [0.9, 1.14]) P.add(new THREE.CylinderGeometry(0.025, 0.025, w, 6).rotateZ(Math.PI / 2).translate(0, y, edge), IRON);
+  C.push({ x: 0, z: edge, hw: w / 2, hd: 0.3 });
+
+  // The rain tree: a thick trunk out of a round laterite planter (a seat
+  // all round), its canopy spreading wide and flat.
+  const tx = -w * 0.25;
+  const tz = -d * 0.08;
+  P.cyl(1.3, 1.35, 0.5, tx, 0.25, tz, 0x9a5a3c, 16);
+  P.cyl(1.38, 1.38, 0.08, tx, 0.52, tz, 0xc9a07e, 16);
+  P.cyl(0.26, 0.38, 3.4, tx, 2.2, tz, 0x5b4331, 8);
+  for (const [bx, bz, a] of [[1, 0.3, 0.7], [-0.8, 0.6, -0.6], [0.2, -1, 0.5]]) {
+    P.add(new THREE.CylinderGeometry(0.1, 0.16, 2.2, 6).rotateZ(a).rotateY(Math.atan2(bz, bx)).translate(tx + bx * 0.7, 4.1, tz + bz * 0.7), 0x5b4331);
+  }
+  for (let i = 0; i < 7; i++) {
+    const a = (i / 7) * Math.PI * 2 + rand() * 0.4;
+    const r = i === 0 ? 0 : 1.9 + rand() * 0.9;
+    const green = [0x3f7a3a, 0x4a8a3f, 0x356b32][i % 3];
+    P.add(new THREE.SphereGeometry(1.9 + rand() * 0.6, 10, 7).scale(1.25, 0.42, 1.25).translate(tx + Math.cos(a) * r, 5.2 + rand() * 0.5, tz + Math.sin(a) * r), green);
+  }
+  C.push({ x: tx, z: tz, hw: 1.3, hd: 1.3 });
+
+  // Benches facing the water, beside the tree.
+  const bench = (x: number, z: number) => {
+    P.box(1.7, 0.08, 0.45, x, 0.45, z, WOOD);
+    P.box(1.7, 0.4, 0.07, x, 0.72, z - 0.22, WOOD);
+    // A concrete body under the slats, as the seafront's benches are built.
+    P.box(1.5, 0.41, 0.4, x, 0.205, z, 0xcfc8b8);
+    C.push({ x, z, hw: 0.85, hd: 0.25 });
+  };
+  const benchZ = edge + 1.3;
+  for (let x = tx + 2.4; x < w / 2 - 1; x += 2.6) bench(x, benchZ);
+
+  // The seafood stalls along the street side: a table under a blue tarp on
+  // four poles, the catch on crushed ice (fish, prawns, a crab or two), a
+  // board with the day's prices, a plastic chair.
+  const stall = (x: number, z: number) => {
+    P.box(2.2, 0.08, 1.1, x, 0.85, z, 0x9aa3a8);
+    // A cloth hung all round the table, down to the paving.
+    for (const sz of [-1, 1]) P.box(2.2, 0.72, 0.03, x, 0.45, z + sz * 0.56, 0x1f5f8b);
+    for (const sx of [-1, 1]) P.box(0.03, 0.72, 1.1, x + sx * 1.1, 0.45, z, 0x1f5f8b);
+    for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) P.box(0.06, 0.85, 0.06, x + sx * 1.0, 0.42, z + sz * 0.48, IRON);
+    P.box(2.0, 0.1, 0.9, x, 0.94, z, 0xeef4f6); // ice
+    for (let k = 0; k < 7; k++) {
+      const fx = x - 0.8 + k * 0.27;
+      P.add(new THREE.SphereGeometry(0.12, 6, 4).scale(2.2, 0.45, 0.8).rotateY(rand() - 0.5).translate(fx, 1.02, z - 0.2 + rand() * 0.35), [0x9fb1bd, 0x7d8e9c, 0xc9a9a0][k % 3]);
     }
+    P.add(new THREE.SphereGeometry(0.16, 7, 4).scale(1.2, 0.5, 1).translate(x + 0.6, 1.04, z + 0.25), 0xc0392b); // a crab
+    for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) P.cyl(0.03, 0.03, 2.3, x + sx * 1.25, 1.15, z + sz * 0.8, 0x7a7f84, 5);
+    P.add(new THREE.BoxGeometry(2.8, 0.05, 2.0).rotateX(0.08).translate(x, 2.35, z), 0x2a6fb0); // tarp
+    P.box(0.7, 0.5, 0.04, x - 0.6, 1.4, z + 0.62, 0xf4efe4); // price board
+    P.box(0.45, 0.05, 0.45, x + 0.5, 0.45, z - 1.0, 0xc0392b); // chair
+    P.box(0.45, 0.45, 0.05, x + 0.5, 0.68, z - 1.2, 0xc0392b);
+    C.push({ x, z, hw: 1.1, hd: 0.55 });
+  };
+  const stallZ = d / 2 - 1.6;
+  const stalls = Math.max(1, Math.floor((w - 3) / 3.4));
+  for (let k = 0; k < stalls; k++) stall(-w / 2 + 1.8 + k * 3.4, stallZ);
+
+  // A tender-coconut cart: green nuts heaped on a handcart, the machete's block.
+  const cx = w / 2 - 1.4;
+  const cz = d * 0.05;
+  P.box(1.4, 0.1, 0.9, cx, 0.75, cz, WOOD);
+  for (const sx of [-0.55, 0.55]) P.add(new THREE.CylinderGeometry(0.32, 0.32, 0.08, 12).rotateX(Math.PI / 2).rotateY(Math.PI / 2).translate(cx + sx, 0.32, cz + 0.5), 0x3a3d42);
+  for (let k = 0; k < 9; k++) P.add(new THREE.SphereGeometry(0.17, 8, 6).scale(1, 1.15, 1).translate(cx - 0.45 + (k % 3) * 0.42, 0.95 + Math.floor(k / 3) * 0.14, cz - 0.25 + ((k * 7) % 3) * 0.22), k % 4 ? 0x5a8f2e : 0x7aa640);
+  P.box(0.3, 0.25, 0.3, cx + 0.55, 0.9, cz - 0.3, 0x6a4a2a);
+  // Underneath, a crate of more nuts and the cut husks.
+  P.box(1.3, 0.45, 0.85, cx, 0.23, cz, 0x7a5a36);
+  for (let k = 0; k < 4; k++) P.add(new THREE.SphereGeometry(0.15, 7, 5).translate(cx - 0.45 + k * 0.3, 0.5, cz - 0.1 + (k % 2) * 0.2), 0x6b5a2e);
+  C.push({ x: cx, z: cz, hw: 0.75, hd: 0.55 });
+
+  // Lamp posts: a fluted post, a lantern on top.
+  for (const [lx, lz] of [[w / 2 - 0.6, edge + 0.9], [-w / 2 + 0.6, d * 0.12]]) {
+    P.cyl(0.08, 0.12, 3.6, lx, 1.8, lz, 0x1f3b2e, 8);
+    P.cyl(0.18, 0.18, 0.2, lx, 0.1, lz, 0x1f3b2e, 8);
+    P.box(0.34, 0.45, 0.34, lx, 3.85, lz, 0xfff0c2);
+    P.cone(0.3, 0.25, lx, 4.2, lz, 0x1f3b2e, 4);
+    C.push({ x: lx, z: lz, hw: 0.15, hd: 0.15 });
   }
   return finish(P, C, []);
 }

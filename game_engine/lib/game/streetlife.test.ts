@@ -709,8 +709,8 @@ test("you can walk under Charminar's arches and into a cinema's forecourt, not t
   assert.equal(cw.blocked(...at(cinema, 0, 0), 0.1), true, "the hall is not solid");
 });
 
-test("a cinema's hall and a fishing net's posts are drawn where they collide (no walls of air)", () => {
-  for (const [id, model, city] of [["majestic-cross", "cinema", "bengaluru"], ["dadar-chowk", "cinema", "mumbai"], ["fort-kochi", "fishing_nets", "kochi"]] as const) {
+test("a cinema's hall, a fishing net's posts and the seafront square's furniture are drawn where they collide (no walls of air)", () => {
+  for (const [id, model, city] of [["majestic-cross", "cinema", "bengaluru"], ["dadar-chowk", "cinema", "mumbai"], ["fort-kochi", "fishing_nets", "kochi"], ["fort-kochi", "promenade", "kochi"]] as const) {
     const map = loadMap(id);
     for (const l of map.landmarks.filter((l) => l.model === model)) {
       const cw = new CollisionWorld();
@@ -784,6 +784,21 @@ test("Bengaluru's cinemas are its own single screens, no two alike; Mumbai's sta
   for (const c of blr) assert.equal(c.name, "bengaluru-single-screen");
   assert.equal(new Set(blr.map((c) => c.look)).size, 4, "two of Majestic's cinemas look the same");
   for (const c of colours("dadar-chowk", "mumbai")) assert.equal(c.name, "mumbai-art-deco-cinema");
+});
+
+test("Vasco da Gama Square is furnished: a railing to the sea, a tree, benches, seafood stalls, a coconut cart, lamps", async () => {
+  const { promenade } = await import("./world/monuments");
+  const m = promenade(10, 10);
+  const size = (c: { hw: number; hd: number }) => `${(c.hw * 2).toFixed(1)}x${(c.hd * 2).toFixed(1)}`;
+  const kinds = m.colliders.map(size);
+  assert.ok(kinds.includes("10.0x0.6"), "no parapet along the sea");
+  assert.ok(kinds.includes("2.6x2.6"), "no tree planter");
+  assert.ok(kinds.filter((k) => k === "2.2x1.1").length >= 2, "fewer than two seafood stalls");
+  assert.ok(kinds.filter((k) => k === "1.7x0.5").length >= 1, "no bench");
+  assert.ok(kinds.includes("1.5x1.1"), "no coconut cart");
+  assert.ok(kinds.filter((k) => k === "0.3x0.3").length >= 2, "fewer than two lamps");
+  // Room to walk through it: the middle of the square is open.
+  assert.ok(!m.colliders.some((c) => Math.abs(1 - c.x) < c.hw && Math.abs(1.5 - c.z) < c.hd), "the square's middle is blocked");
 });
 
 /** The map's static collision, as buildWorld registers it. */
