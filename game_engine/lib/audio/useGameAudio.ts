@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { setSfxMuted } from "@/lib/audio/engine";
+import { ambience } from "@/lib/audio/ambience";
 import { DISTRICT_MUSIC, MusicEngine } from "@/lib/audio/music";
 
 const SFX_KEY = "sadak-sfx";
@@ -85,9 +86,10 @@ export function useGameAudio(districtId: string | undefined) {
     setMusicOn(nextOn);
   }, [sfxOn, musicOn]);
 
-  /** Duck music under dialogue TTS / the mic — the issue's one hard rule. */
+  /** Duck music and the street under dialogue TTS / the mic — the issue's one hard rule. */
   const duck = useCallback((ducked: boolean) => {
     engineRef.current?.setDucked(ducked);
+    ambience.setDucked(ducked);
   }, []);
 
   return { sfxOn, musicOn, toggleSfx, toggleMusic, toggleAll, duck };

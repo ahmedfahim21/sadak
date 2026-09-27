@@ -21,6 +21,7 @@ import { BARBER_INTERACT_LABEL, BARBER_XP, barberTaskId } from "@/lib/game/barbe
 import type { DistrictProgress } from "@/lib/game/progress";
 import { errandLevelNumber, lessonTierFor } from "@/lib/game/levels";
 import { useGameAudio } from "@/lib/audio/useGameAudio";
+import { ambience } from "@/lib/audio/ambience";
 import { playSfx } from "@/lib/audio/sfx";
 import Title from "./Title";
 import EnterLoading from "./EnterLoading";
@@ -349,8 +350,13 @@ export default function GameShell() {
       (window as unknown as Record<string, unknown>).__game = game;
     }
     game.start();
+    // The street's sound, fed from where the player is ten times a second.
+    ambience.start(worldMap, district.id);
+    const sounds = window.setInterval(() => ambience.update(game.soundscape(), 0.1), 100);
 
     return () => {
+      window.clearInterval(sounds);
+      ambience.stop();
       game.dispose();
       gameRef.current = null;
       setLive(null);

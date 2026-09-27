@@ -210,6 +210,8 @@ export type Crowd = {
   /** Scatter walkers round `focus`. */
   prime(focus: THREE.Vector3): void;
   update(dt: number, focus: THREE.Vector3): void;
+  /** How many people within `r` of (x, z): the murmur's loudness. */
+  near(x: number, z: number, r: number): number;
   dispose(): void;
 };
 
@@ -568,6 +570,11 @@ export function createCrowd(opts: CrowdOpts): Crowd {
         pose(i);
       }
       for (const name of PARTS) meshes[name].instanceMatrix.needsUpdate = true;
+    },
+    near(x, z, r) {
+      let n = 0;
+      for (const p of people) if (Math.abs(p.x - x) < r && Math.abs(p.z - z) < r && Math.hypot(p.x - x, p.z - z) < r) n++;
+      return n;
     },
     dispose() {
       for (const name of PARTS) {
