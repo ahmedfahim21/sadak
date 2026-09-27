@@ -378,7 +378,8 @@ function Errands({
         </div>
       </CardHeader>
       <CardContent className={cn("pt-1", compact ? "px-2" : "px-3")}>
-        <ul className="grid gap-0.5">
+        {/* minmax(0, 1fr): without it the column grows to its longest line and nothing truncates. */}
+        <ul className="grid grid-cols-[minmax(0,1fr)] gap-0.5">
           {tasks.map((t) => {
             const finished = completed.has(t.id);
             const d = finished ? null : away(t.id);
