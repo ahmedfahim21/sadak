@@ -186,6 +186,8 @@ type Person = {
   height: number;
   costume: Costume;
   mover: Mover;
+  /** Placed afresh (out of sight): go straight there instead of easing. */
+  snap?: boolean;
 };
 
 export type CrowdOpts = {
@@ -225,7 +227,9 @@ function pickWeighted<T>(items: readonly T[], weights: readonly number[], r: num
 }
 
 const LIVE_RADIUS = 150;
-const SPAWN_MIN = 60;
+/** Recycled walkers come back in past the haze and the buildings, never in
+ *  plain sight of the player (60m put them popping up down an open street). */
+export const SPAWN_MIN = 95;
 const SPAWN_MAX = 140;
 
 /** Where a pedestrian walks across this road: on the footpath where there is
@@ -299,6 +303,7 @@ export function createCrowd(opts: CrowdOpts): Crowd {
       m.dir = dir;
       m.p = pp;
       m.off = walkOffset(road.r, rand() < 0.5 ? 1 : -1, rand);
+      p.snap = true;
       return;
     }
   };
@@ -497,11 +502,14 @@ export function createCrowd(opts: CrowdOpts): Crowd {
     }
     const ri = options[Math.floor(rand() * options.length)];
     const next = net.roads[ri].r;
+    // Keep to the same side of the street, as people do at a corner: the
+    // side of travel, not of the road's own drawing direction (a road drawn
+    // the other way round flipped them across to the far footpath).
+    const leftOfTravel: 1 | -1 = m.off * m.dir >= 0 ? 1 : -1;
     m.road = ri;
     m.dir = next.a === node ? 1 : -1;
     m.p = 0;
-    // Keep to the same side of the street, as people do at a corner.
-    m.off = walkOffset(next, m.off >= 0 ? 1 : -1, rand);
+    m.off = walkOffset(next, (leftOfTravel * m.dir) as 1 | -1, rand);
   }
 
   function step(p: Person, dt: number) {
@@ -515,8 +523,19 @@ export function createCrowd(opts: CrowdOpts): Crowd {
     // Left of travel in a +x east, +z south frame; `off` is measured left of
     // the road's own a->b direction, so flip it when walking b->a.
     const o = m.off * m.dir;
-    p.x = s.x + s.dz * o;
-    p.z = s.z - s.dx * o;
+    const tx = s.x + s.dz * o;
+    const tz = s.z - s.dx * o;
+    if (p.snap !== false) {
+      p.x = tx;
+      p.z = tz;
+      p.snap = false;
+    } else {
+      // Eased onto the path, so a corner (where one street's footpath line
+      // meets the next) is a curve, not a hop across.
+      const k = 1 - Math.exp(-dt * 4);
+      p.x += (tx - p.x) * k;
+      p.z += (tz - p.z) * k;
+    }
     const yaw = Math.atan2(s.dx, s.dz);
     let d = yaw - p.yaw;
     d = Math.atan2(Math.sin(d), Math.cos(d));
