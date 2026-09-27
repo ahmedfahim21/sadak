@@ -73,6 +73,8 @@ export default function GameShell() {
   /** The district's haircut, from its stored pack like the errands. */
   const [barberTask, setBarberTask] = useState<StreetTask | null>(null);
   const [taskFinale, setTaskFinale] = useState<DistrictTaskPack["finale"] | null>(null);
+  /** The finale, shown once as the last errand is done; the city stays open to explore after. */
+  const [finaleOpen, setFinaleOpen] = useState(false);
   const [entering, setEntering] = useState(false);
   const [enteringCity, setEnteringCity] = useState<string | undefined>();
   // Survives `district` going back to null so Title (which fully remounts
@@ -220,6 +222,7 @@ export default function GameShell() {
         setTasks(districtPayload.tasks);
         setBarberTask(districtPayload.taskPack.barber);
         setTaskFinale(districtPayload.taskPack.finale);
+        setFinaleOpen(false);
         setLastDistrictId(districtId);
         setComfort(pickedComfort);
         setBaseLang(pickedBaseLang);
@@ -309,11 +312,12 @@ export default function GameShell() {
       barberOpen ||
       menuOpen ||
       mapOpen ||
+      finaleOpen ||
       card !== null ||
       (mobilePlay && portrait);
     g.paused = frozen;
     if (frozen) g.releasePointer();
-  }, [talking, barberOpen, menuOpen, mapOpen, card, mobilePlay, portrait]);
+  }, [talking, barberOpen, menuOpen, mapOpen, finaleOpen, card, mobilePlay, portrait]);
 
   // Music sits under the dialogue's TTS and the held mic, and stays down
   // for the pause menu and the portrait rotate-gate, so it never fights the
@@ -536,6 +540,7 @@ export default function GameShell() {
       setToast(`Done: ${task.title}`);
       setTimeout(() => setToast(null), 4000);
       setTalking(null);
+      if (tasks.every((t) => nextCompleted.has(t.id))) setFinaleOpen(true);
       // The auto and the bus actually take you somewhere once you have
       // talked your way on.
       if (task.kind === "auto" || task.kind === "bus") gameRef.current?.startRide(taskId);
@@ -583,6 +588,7 @@ export default function GameShell() {
     talking !== null ||
     barberOpen ||
     menuOpen ||
+    finaleOpen ||
     card !== null ||
     (mobilePlay && portrait);
 
@@ -726,8 +732,10 @@ export default function GameShell() {
         </DialogContent>
       </Dialog>
 
+      {/* Closing it (Esc, outside, Keep exploring) leaves you in the city; it
+          used to leave the district, and came back on every visit after. */}
       {allDone && finale && (
-        <Dialog open onOpenChange={(open) => !open && leaveDistrict()}>
+        <Dialog open={finaleOpen} onOpenChange={setFinaleOpen}>
           <DialogContent className="text-center sm:max-w-lg">
             <DialogHeader>
               <DialogTitle className="text-3xl leading-tight">{finale.title}</DialogTitle>
@@ -738,7 +746,8 @@ export default function GameShell() {
             <p className="text-sm text-foreground/80">
               ₹{totalTaskRewardForTasks(tasks).toLocaleString("en-IN")} earned in {district.name}
             </p>
-            <DialogFooter className="justify-center sm:justify-center">
+            <DialogFooter className="justify-center gap-2 sm:justify-center">
+              <Button onClick={() => setFinaleOpen(false)}>Keep exploring</Button>
               <Button variant="neutral" onClick={leaveDistrict}>
                 Choose another district
               </Button>
