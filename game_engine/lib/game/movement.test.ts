@@ -110,19 +110,19 @@ test("no control while knocked aside: the body coasts to a stop", () => {
   assert.equal(b.windup, 0, "jumped while stumbling");
 });
 
-test("sprint breath: about six seconds flat out, winded until a third is back, quicker to recover standing", async () => {
+test("sprint breath: about ten seconds flat out, winded until a third is back, quicker to recover standing", async () => {
   const { newStamina, stepStamina } = await import("./movement");
   const dt = 1 / 60;
   const s = newStamina();
   let t = 0;
   while (stepStamina(s, true, true, dt)) t += dt;
-  assert.ok(t > 5.5 && t < 6.5, `sprinted ${t.toFixed(2)}s`);
+  assert.ok(t > 9.5 && t < 10.5, `sprinted ${t.toFixed(2)}s`);
   assert.equal(s.winded, true);
   // Winded: holding sprint gets nothing until it's back to a third.
   let wait = 0;
   while (!stepStamina(s, true, true, dt)) wait += dt;
   // (less the one frame of sprint it has just spent)
-  assert.ok(s.level >= 0.35 - dt / 6 - 1e-9, `sprinting again at ${s.level.toFixed(3)}`);
+  assert.ok(s.level >= 0.35 - dt / 10 - 1e-9, `sprinting again at ${s.level.toFixed(3)}`);
   assert.ok(wait > 2, `winded for only ${wait.toFixed(2)}s`);
   // Standing still refills faster than walking.
   const still = { level: 0.2, winded: false };

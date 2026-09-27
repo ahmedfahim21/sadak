@@ -155,13 +155,13 @@ export function stepBody(b: Body, input: MoveInput, dt: number): MoveResult {
 }
 
 /**
- * Breath for sprinting: about six seconds flat out from full, back in four
+ * Breath for sprinting: about ten seconds flat out from full, back in four
  * standing (slower on the move). Run it out and you're winded: no sprint
  * until it's back to a third.
  */
 export type Stamina = { level: number; winded: boolean };
 export const newStamina = (): Stamina => ({ level: 1, winded: false });
-const DRAIN = 1 / 6;
+const DRAIN = 1 / 10;
 const RECOVER_STILL = 1 / 4;
 const RECOVER_MOVING = 1 / 7;
 const RECOVERED = 0.35;
