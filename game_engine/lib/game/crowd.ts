@@ -232,6 +232,8 @@ const LIVE_RADIUS = 150;
 /** Recycled walkers come back in past the haze and the buildings, never in
  *  plain sight of the player (60m put them popping up down an open street). */
 export const SPAWN_MIN = 95;
+/** How much faster than their walk someone closes on their line (a corner). */
+const CATCH_UP = 0.7;
 const SPAWN_MAX = 140;
 
 /** Where a pedestrian walks across this road: on the footpath where there is
@@ -496,10 +498,10 @@ export function createCrowd(opts: CrowdOpts): Crowd {
     const node = m.dir === 1 ? road.r.b : road.r.a;
     const options = net.at(node).filter((ri) => ri !== m.road);
     if (!options.length) {
-      // Dead end: turn round.
+      // Dead end: turn round, on the same side (flipping `dir` keeps the
+      // same footpath; flipping `off` too sent them across the road).
       m.dir = (-m.dir) as 1 | -1;
       m.p = 0;
-      m.off = -m.off;
       return;
     }
     const ri = options[Math.floor(rand() * options.length)];
@@ -532,11 +534,23 @@ export function createCrowd(opts: CrowdOpts): Crowd {
       p.z = tz;
       p.snap = false;
     } else {
-      // Eased onto the path, so a corner (where one street's footpath line
-      // meets the next) is a curve, not a hop across.
-      const k = 1 - Math.exp(-dt * 4);
-      p.x += (tx - p.x) * k;
-      p.z += (tz - p.z) * k;
+      // Walked onto the path, so a corner (where one street's footpath line
+      // meets the next) is cut across at a walk, not a hop or a dash: an
+      // easing proportional to the gap sent them off at 7m/s and more.
+      const gx = tx - p.x;
+      const gz = tz - p.z;
+      const gap = Math.hypot(gx, gz);
+      const most = (p.speed + CATCH_UP) * dt;
+      const k = gap > most ? most / gap : 1;
+      p.x += gx * k;
+      p.z += gz * k;
+      // Facing the way they're going while they cut across.
+      if (gap > 0.5) {
+        let d = Math.atan2(gx, gz) - p.yaw;
+        d = Math.atan2(Math.sin(d), Math.cos(d));
+        p.yaw += d * Math.min(1, dt * 6);
+        return;
+      }
     }
     const yaw = Math.atan2(s.dx, s.dz);
     let d = yaw - p.yaw;

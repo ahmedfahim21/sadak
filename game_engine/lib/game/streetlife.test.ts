@@ -890,7 +890,7 @@ test("a gateway mapped on its road stands across it, the road through its arches
   }
 });
 
-test("crowd walkers never jump: they turn corners on their own side, and come back in only out of sight", async () => {
+test("crowd walkers never jump or dash: they turn corners on their own side at a walk, and come back in only out of sight", async () => {
   const { SPAWN_MIN } = await import("./crowd");
   const map = loadMap("purani-sadak");
   const crowd = createCrowd({ landmark: "delhi", map, groundAt: () => 0.2, blocked: () => false, gatherings: [], walkers: 60 });
@@ -908,8 +908,11 @@ test("crowd walkers never jump: they turn corners on their own side, and come ba
     const now = Array.from({ length: crowd.count }, (_, i) => at(i));
     now.forEach((p, i) => {
       const jump = Math.hypot(p.x - last[i].x, p.z - last[i].z);
-      if (jump < 0.6) return;
       const d = Math.hypot(p.x - focus.x, p.z - focus.z);
+      // In sight, never faster than a brisk walk (a corner or a dead end was
+      // a dash to the new footpath line, tens of metres a second).
+      if (d < SPAWN_MIN - 6) assert.ok(jump <= 2.4 * dt, `frame ${f}: person ${i} moved at ${(jump / dt).toFixed(1)} m/s, ${d.toFixed(0)}m from the player`);
+      if (jump < 0.6) return;
       // Anything bigger is a recycle, and lands out of sight (the spawn
       // distance is checked on the street's line; the footpath is a few
       // metres to one side of it).
