@@ -1419,61 +1419,154 @@ export function promenade(w: number, d: number): Monument {
   return finish(P, C, []);
 }
 
-/** A statue on a stepped plinth, facing +z: a draped standing figure, one
- *  arm raised (Kannagi holds up her anklet). The Marina's row of statues. */
-export type StatuePose = "anklet" | "scholar" | "leader";
-
 /**
  * A bronze on a tiered granite pedestal, in one of the Marina's poses:
  * Kannagi holding up her anklet, Thiruvalluvar the poet with his palm-leaf
  * book, a leader in uniform with a raised arm (Subhas Chandra Bose). The
  * pedestal carries a plaque and a railing round its foot.
  */
+/** A tapered limb (or robe, or strap) from `a` to `b`. */
+function limb(P: Parts, a: THREE.Vector3, b: THREE.Vector3, r0: number, r1: number, hex: number, seg = 8) {
+  const len = a.distanceTo(b);
+  const g = new THREE.CylinderGeometry(r1, r0, len, seg).translate(0, len / 2, 0);
+  g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize()));
+  P.add(g.translate(a.x, a.y, a.z), hex);
+}
+function ball(P: Parts, x: number, y: number, z: number, r: number, hex: number, sx = 1, sy = 1, sz = 1) {
+  P.add(new THREE.SphereGeometry(r, 12, 9).scale(sx, sy, sz).translate(x, y, z), hex);
+}
+
+/** A lotus: rings of petals round a cushion, the seat of a figure. */
+function lotus(P: Parts, y: number, r: number, hex: number) {
+  P.cyl(r * 0.8, r * 0.7, r * 0.3, 0, y + r * 0.15, 0, hex, 16);
+  for (const [ring, tilt] of [[1, 0.9], [0.8, 0.5]] as const) {
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2 + ring;
+      const g = new THREE.SphereGeometry(r * 0.3, 8, 6).scale(0.55, 1, 0.3).rotateX(-tilt).rotateY(-a + Math.PI / 2);
+      P.add(g.translate(Math.cos(a) * r * ring * 0.85, y + r * 0.25, Math.sin(a) * r * ring * 0.85), hex);
+    }
+  }
+}
+
+/** A statue on a pedestal inside a railed enclosure, facing +z. The Marina's
+ *  row of statues: Kannagi raising her anklet, Thiruvalluvar seated with his
+ *  palm-leaf book, Netaji Bose in uniform at the salute. Each figure bronze,
+ *  modelled in proportion (jointed limbs, drape, hair), on its own pedestal. */
+export type StatuePose = "anklet" | "scholar" | "leader";
+
 export function statue(w: number, d: number, pose: StatuePose = "anklet", figure = 0x5a4a3c, plinth = 0xd8d0c0): Monument {
   const P = new Parts();
   const s = Math.max(3.2, Math.min(w, d) + 1);
-  // Railing and the tiered pedestal.
-  P.box(s + 1.4, 0.3, s + 1.4, 0, 0.15, 0, 0xc9c1b0);
-  for (let k = 0; k < 16; k++) {
+  const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+  const HI = 0x7a6450; // the bronze's worn highlights
+  const GILT = 0xc9a44a;
+  // The enclosure: a low plinth wall, stone pillars at the corners, iron railings on it.
+  const e = (s + 1.2) / 2;
+  P.box(s + 1.4, 0.45, s + 1.4, 0, 0.225, 0, 0xc9c1b0);
+  for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    P.box(0.34, 1.15, 0.34, x * e, 0.58, z * e, 0xd8d0c0);
+    P.box(0.42, 0.1, 0.42, x * e, 1.2, z * e, 0xc4bba8);
+  }
+  for (let k = 1; k < 15; k++) {
     const t = -1 + (k / 15) * 2;
-    for (const [x, z] of [[t, 1], [t, -1], [1, t], [-1, t]]) P.box(0.06, 0.8, 0.06, (x * (s + 1.2)) / 2, 0.7, (z * (s + 1.2)) / 2, 0x2e3a33);
+    for (const [x, z] of [[t, 1], [t, -1], [1, t], [-1, t]]) P.box(0.05, 0.7, 0.05, x * e, 0.8, z * e, 0x2e3a33);
   }
   for (const [x, z, lw, ld] of [[0, 1, s + 1.2, 0], [0, -1, s + 1.2, 0], [1, 0, 0, s + 1.2], [-1, 0, 0, s + 1.2]] as const) {
-    P.box(lw || 0.08, 0.08, ld || 0.08, (x * (s + 1.2)) / 2, 1.1, (z * (s + 1.2)) / 2, 0x2e3a33);
+    for (const yy of [0.55, 1.1]) P.box(lw || 0.06, 0.06, ld || 0.06, x * e, yy, z * e, 0x2e3a33);
   }
-  P.box(s, 0.6, s, 0, 0.6, 0, plinth);
-  P.box(s * 0.78, 0.5, s * 0.78, 0, 1.15, 0, plinth);
-  P.box(s * 0.56, 3, s * 0.56, 0, 2.9, 0, plinth);
-  P.box(s * 0.64, 0.25, s * 0.64, 0, 4.5, 0, 0xc4bba8);
-  P.box(s * 0.34, 0.9, 0.06, 0, 2.9, s * 0.28 + 0.03, 0x6b5a3a);
-  const y = 4.6;
-  const H = 3.6;
+
+  // The pedestal: its own for each.
+  let y: number;
   if (pose === "scholar") {
-    // Seated-standing sage: flowing robe, beard, a book held at the chest.
-    P.cyl(0.55, 0.85, H * 0.62, 0, y + H * 0.31, 0, figure, 12);
-    P.cyl(0.45, 0.55, H * 0.22, 0, y + H * 0.73, 0, figure, 12);
-    P.add(new THREE.SphereGeometry(0.34, 10, 8).translate(0, y + H * 0.93, 0), figure);
-    P.add(new THREE.ConeGeometry(0.22, 0.45, 8).rotateX(Math.PI).translate(0, y + H * 0.8, 0.22), figure);
-    P.box(0.5, 0.36, 0.08, 0, y + H * 0.68, 0.5, 0x8a7550);
-    for (const sx of [-1, 1]) P.add(new THREE.BoxGeometry(0.18, 0.9, 0.18).rotateX(-0.9).translate(sx * 0.35, y + H * 0.68, 0.3), figure);
+    // Broad and low, a carved band, the lotus on top.
+    P.box(s, 0.5, s, 0, 0.55, 0, plinth);
+    P.box(s * 0.82, 1.8, s * 0.82, 0, 1.7, 0, plinth);
+    P.box(s * 0.86, 0.25, s * 0.86, 0, 2.2, 0, 0xc4bba8);
+    P.box(s * 0.9, 0.3, s * 0.9, 0, 2.75, 0, plinth);
+    P.box(s * 0.4, 0.6, 0.06, 0, 1.5, s * 0.41 + 0.03, 0x6b5a3a);
+    y = 2.9;
+    lotus(P, y, s * 0.36, figure);
+    y += s * 0.2;
   } else if (pose === "leader") {
-    // In uniform: trousers, tunic, cap, one arm raised forward.
-    for (const sx of [-1, 1]) P.box(0.3, H * 0.45, 0.32, sx * 0.2, y + H * 0.225, 0, figure);
-    P.box(0.8, H * 0.35, 0.5, 0, y + H * 0.62, 0, figure);
-    P.box(0.86, 0.1, 0.56, 0, y + H * 0.48, 0, 0x3a2e24);
-    P.add(new THREE.SphereGeometry(0.28, 10, 8).translate(0, y + H * 0.88, 0), figure);
-    P.cyl(0.3, 0.3, 0.16, 0, y + H * 0.96, 0, figure, 10);
-    P.box(0.18, 0.9, 0.18, -0.5, y + H * 0.6, 0, figure);
-    P.add(new THREE.BoxGeometry(0.18, 1.1, 0.18).rotateX(-1.2).translate(0.5, y + H * 0.8, 0.4), figure);
+    // Steps up to a tall shaft with an inscription and a moulded cap.
+    P.box(s, 0.35, s, 0, 0.475, 0, plinth);
+    P.box(s * 0.85, 0.35, s * 0.85, 0, 0.825, 0, plinth);
+    P.box(s * 0.6, 3.2, s * 0.6, 0, 2.6, 0, plinth);
+    P.box(s * 0.66, 0.3, s * 0.66, 0, 4.35, 0, 0xc4bba8);
+    P.box(s * 0.44, 1.1, 0.06, 0, 2.6, s * 0.3 + 0.03, 0x6b5a3a);
+    P.box(s * 0.3, 0.12, 0.07, 0, 3.4, s * 0.3 + 0.04, GILT);
+    y = 4.5;
   } else {
-    // Kannagi: sari to the ankle, hair loose, the anklet raised high.
-    P.cyl(0.36, 0.7, H * 0.66, 0, y + H * 0.33, 0, figure, 12);
-    P.cyl(0.3, 0.36, H * 0.2, 0, y + H * 0.76, 0, figure, 12);
-    P.add(new THREE.SphereGeometry(0.26, 10, 8).translate(0, y + H * 0.93, 0), figure);
-    P.add(new THREE.ConeGeometry(0.3, 1.1, 8).rotateX(Math.PI).translate(0, y + H * 0.78, -0.2), figure);
-    P.box(0.16, 1.1, 0.16, -0.42, y + H * 0.62, 0, figure);
-    P.add(new THREE.BoxGeometry(0.16, 1.3, 0.16).rotateZ(-0.35).translate(0.5, y + H * 0.98, 0), figure);
-    P.add(new THREE.TorusGeometry(0.18, 0.05, 6, 14).translate(0.72, y + H * 1.16, 0), 0xc9a44a);
+    // Tiered, then a tall shaft, a lotus under her feet.
+    P.box(s, 0.6, s, 0, 0.6, 0, plinth);
+    P.box(s * 0.78, 0.5, s * 0.78, 0, 1.15, 0, plinth);
+    P.box(s * 0.56, 3, s * 0.56, 0, 2.9, 0, plinth);
+    P.box(s * 0.64, 0.25, s * 0.64, 0, 4.5, 0, 0xc4bba8);
+    P.box(s * 0.34, 0.9, 0.06, 0, 2.9, s * 0.28 + 0.03, 0x6b5a3a);
+    y = 4.62;
+    lotus(P, y, 0.7, figure);
+    y += 0.3;
+  }
+
+  const k = 1.25; // over life size, as monuments are
+  const at = (x: number, yy: number, z: number) => V(x * k, y + yy * k, z * k);
+  if (pose === "scholar") {
+    // Seated cross-legged: the folded legs, the robe falling over them.
+    ball(P, 0, y + 0.22 * k, 0.05 * k, 0.55 * k, figure, 1.35, 0.42, 0.95);
+    for (const sx of [-1, 1]) ball(P, sx * 0.34 * k, y + 0.2 * k, 0.4 * k, 0.16 * k, figure, 1.2, 0.7, 1);
+    limb(P, at(0, 0.35, 0), at(0, 1.15, -0.02), 0.36 * k, 0.3 * k, figure, 12);
+    ball(P, 0, y + 1.12 * k, 0.02 * k, 0.32 * k, figure, 1.25, 0.6, 0.85); // shoulders
+    limb(P, at(-0.28, 1.15, 0.05), at(0.3, 0.45, 0.2), 0.08 * k, 0.1 * k, HI); // the shawl across
+    limb(P, at(0, 1.2, 0), at(0, 1.35, 0), 0.1 * k, 0.09 * k, figure);
+    ball(P, 0, y + 1.5 * k, 0, 0.19 * k, figure, 0.95, 1.1, 1);
+    ball(P, 0, y + 1.74 * k, -0.02 * k, 0.1 * k, figure, 1, 0.9, 1); // hair knot
+    P.add(new THREE.ConeGeometry(0.13 * k, 0.32 * k, 8).rotateX(Math.PI).translate(0, y + 1.3 * k, 0.1 * k), figure); // beard
+    // Left hand holds the palm-leaf book in the lap; the right raised at the chest, teaching.
+    limb(P, at(-0.34, 1.08, 0), at(-0.36, 0.72, 0.18), 0.08 * k, 0.07 * k, figure);
+    limb(P, at(-0.36, 0.72, 0.18), at(-0.12, 0.62, 0.42), 0.07 * k, 0.06 * k, figure);
+    P.add(new THREE.BoxGeometry(0.55 * k, 0.05 * k, 0.12 * k).rotateY(0.3).translate(-0.05 * k, y + 0.62 * k, 0.45 * k), HI);
+    limb(P, at(0.34, 1.08, 0), at(0.4, 0.74, 0.2), 0.08 * k, 0.07 * k, figure);
+    limb(P, at(0.4, 0.74, 0.2), at(0.3, 1.02, 0.36), 0.07 * k, 0.06 * k, figure);
+    ball(P, 0.3 * k, y + 1.06 * k, 0.38 * k, 0.06 * k, figure);
+  } else if (pose === "leader") {
+    // Boots, breeches, the tunic belted with a strap across, the peaked cap; the salute.
+    for (const sx of [-1, 1]) {
+      P.box(0.16 * k, 0.12 * k, 0.3 * k, sx * 0.13 * k, y + 0.06 * k, 0.04 * k, 0x2a211a);
+      limb(P, at(sx * 0.13, 0.05, 0), at(sx * 0.13, 0.5, 0), 0.085 * k, 0.09 * k, 0x2a211a); // boot
+      limb(P, at(sx * 0.13, 0.5, 0), at(sx * 0.12, 0.98, 0), 0.09 * k, 0.12 * k, figure);
+    }
+    limb(P, at(0, 0.95, 0), at(0, 1.5, 0), 0.23 * k, 0.26 * k, figure, 12);
+    ball(P, 0, y + 1.5 * k, 0, 0.27 * k, figure, 1.25, 0.55, 0.8);
+    P.cyl(0.25 * k, 0.25 * k, 0.07 * k, 0, y + 1.0 * k, 0, 0x2a211a, 12); // belt
+    limb(P, at(-0.2, 1.52, 0.1), at(0.2, 1.0, 0.18), 0.025 * k, 0.025 * k, 0x2a211a); // cross strap
+    limb(P, at(0, 1.55, 0), at(0, 1.66, 0), 0.08 * k, 0.075 * k, figure);
+    ball(P, 0, y + 1.8 * k, 0.01 * k, 0.15 * k, figure, 0.95, 1.08, 1);
+    P.cyl(0.16 * k, 0.15 * k, 0.12 * k, 0, y + 1.96 * k, 0, figure, 12); // cap
+    P.add(new THREE.CylinderGeometry(0.1 * k, 0.1 * k, 0.02 * k, 10).scale(1, 1, 0.7).translate(0, y + 1.9 * k, 0.14 * k), 0x2a211a); // peak
+    for (const gx of [-0.055, 0.055]) ball(P, gx * k, y + 1.82 * k, 0.13 * k, 0.035 * k, HI); // spectacles
+    // Left arm at the side; right up in the salute, fingers to the cap.
+    limb(P, at(-0.32, 1.48, 0), at(-0.36, 1.12, 0.02), 0.07 * k, 0.065 * k, figure);
+    limb(P, at(-0.36, 1.12, 0.02), at(-0.36, 0.82, 0.06), 0.065 * k, 0.055 * k, figure);
+    limb(P, at(0.32, 1.48, 0), at(0.55, 1.62, 0.12), 0.07 * k, 0.065 * k, figure);
+    limb(P, at(0.55, 1.62, 0.12), at(0.16, 1.9, 0.14), 0.065 * k, 0.05 * k, figure);
+  } else {
+    // Kannagi: the sari flaring to her feet, the drape over her left
+    // shoulder, hair loose down her back, the anklet raised in her right hand.
+    for (const sx of [-1, 1]) P.box(0.12 * k, 0.07 * k, 0.24 * k, sx * 0.1 * k, y + 0.04 * k, 0.12 * k, figure);
+    limb(P, at(0, 0.05, 0), at(0, 1.02, 0), 0.4 * k, 0.24 * k, figure, 14);
+    limb(P, at(0, 1.0, 0), at(0, 1.42, 0), 0.2 * k, 0.21 * k, figure, 12);
+    ball(P, 0, y + 1.3 * k, 0.07 * k, 0.17 * k, figure, 1.3, 0.8, 0.9); // bust
+    ball(P, 0, y + 1.44 * k, 0, 0.22 * k, figure, 1.2, 0.5, 0.8); // shoulders
+    limb(P, at(0.22, 0.8, 0.16), at(-0.2, 1.46, 0.08), 0.1 * k, 0.07 * k, HI); // the pallu across
+    limb(P, at(-0.2, 1.46, -0.02), at(-0.24, 0.7, -0.22), 0.1 * k, 0.16 * k, HI); // falling behind
+    limb(P, at(0, 1.48, 0), at(0, 1.58, 0), 0.07 * k, 0.065 * k, figure);
+    ball(P, 0, y + 1.7 * k, 0.01 * k, 0.13 * k, figure, 0.9, 1.08, 1);
+    limb(P, at(0, 1.72, -0.08), at(0, 1.05, -0.2), 0.14 * k, 0.09 * k, figure); // loose hair
+    limb(P, at(-0.25, 1.42, 0), at(-0.3, 1.08, 0.06), 0.06 * k, 0.055 * k, figure);
+    limb(P, at(-0.3, 1.08, 0.06), at(-0.26, 0.82, 0.14), 0.055 * k, 0.045 * k, figure);
+    limb(P, at(0.25, 1.44, 0), at(0.42, 1.78, 0.04), 0.06 * k, 0.055 * k, figure);
+    limb(P, at(0.42, 1.78, 0.04), at(0.46, 2.16, 0.06), 0.055 * k, 0.045 * k, figure);
+    P.add(new THREE.TorusGeometry(0.11 * k, 0.03 * k, 6, 14).translate(0.47 * k, y + 2.3 * k, 0.06 * k), GILT);
   }
   return finish(P, [{ x: 0, z: 0, hw: (s + 1.4) / 2, hd: (s + 1.4) / 2 }], []);
 }

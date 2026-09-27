@@ -710,7 +710,7 @@ test("you can walk under Charminar's arches and into a cinema's forecourt, not t
 });
 
 test("a cinema's hall, a fishing net's posts and the seafront square's furniture are drawn where they collide (no walls of air)", () => {
-  for (const [id, model, city] of [["majestic-cross", "cinema", "bengaluru"], ["dadar-chowk", "cinema", "mumbai"], ["fort-kochi", "fishing_nets", "kochi"], ["fort-kochi", "promenade", "kochi"]] as const) {
+  for (const [id, model, city] of [["majestic-cross", "cinema", "bengaluru"], ["dadar-chowk", "cinema", "mumbai"], ["fort-kochi", "fishing_nets", "kochi"], ["fort-kochi", "promenade", "kochi"], ["marina-nagar", "statue", "chennai"]] as const) {
     const map = loadMap(id);
     for (const l of map.landmarks.filter((l) => l.model === model)) {
       const cw = new CollisionWorld();
@@ -831,6 +831,24 @@ test("Kolkata's colonial buildings each have their own face: turrets, a colonnad
   // All three different in outline.
   const shape = (cs: typeof queens) => cs.map((c) => `${c.hw.toFixed(1)}x${c.hd.toFixed(1)}`).sort().join();
   assert.equal(new Set([shape(queens), shape(chowringhee), shape(asiatic)]).size, 3);
+});
+
+test("the Marina's statues are three different figures, each over life size on its own pedestal", async () => {
+  const { statue } = await import("./world/monuments");
+  const shape = (pose: "anklet" | "scholar" | "leader") => {
+    const g = statue(4, 4, pose).group;
+    g.updateMatrixWorld(true);
+    const b = new THREE.Box3().setFromObject(g);
+    let verts = 0;
+    g.traverse((o) => { if ((o as THREE.Mesh).isMesh) verts += (o as THREE.Mesh).geometry.attributes.position.count; });
+    return { top: b.max.y, verts };
+  };
+  const [k, t, b] = [shape("anklet"), shape("scholar"), shape("leader")];
+  assert.equal(new Set([k.verts, t.verts, b.verts]).size, 3, "two statues are the same model");
+  // Figures well above the pedestal (a standing figure is some 2m, over life size).
+  assert.ok(k.top > 7.3, `Kannagi's anklet at ${k.top.toFixed(1)}m`);
+  assert.ok(b.top > 6.8, `Bose at ${b.top.toFixed(1)}m`);
+  assert.ok(t.top > 5 && t.top < b.top, `Thiruvalluvar, seated, at ${t.top.toFixed(1)}m`);
 });
 
 /** The map's static collision, as buildWorld registers it. */
