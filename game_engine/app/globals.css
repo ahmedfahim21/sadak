@@ -124,6 +124,16 @@
   }
 }
 
+/* A cover drifting slowly in, as if the camera were still moving. */
+@keyframes cover-drift {
+  from {
+    transform: scale(1.12) translate(1.5%, 1%);
+  }
+  to {
+    transform: scale(1) translate(0, 0);
+  }
+}
+
 @keyframes enter-sweep {
   0% {
     transform: translateX(-100%);

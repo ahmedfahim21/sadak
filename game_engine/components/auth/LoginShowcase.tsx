@@ -3,15 +3,15 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { SEED_DISTRICTS } from "@/lib/game/districts";
-import { DISTRICT_COVER_IMAGES } from "@/lib/game/district-covers";
+import { DISTRICT_COVER_IMAGES, DISTRICT_GALLERY } from "@/lib/game/district-covers";
 import { cn } from "@/lib/utils";
 
 const INTERVAL_MS = 4000;
 
 /**
- * Slow crossfade carousel over district cover art from `district-covers.ts`
- * (all seeded districts, including the six new TTS∩STT languages). Uses the
- * same stills as the district picker — a preview of what is in the game.
+ * Slow crossfade carousel over each city's cover, captured in the game
+ * (`district-covers.ts`), each drifting in as if the camera were still
+ * moving. The same stills as the district picker: what you'll walk into.
  */
 export function LoginShowcase({ className }: { className?: string }) {
   const [index, setIndex] = useState(0);
@@ -40,7 +40,7 @@ export function LoginShowcase({ className }: { className?: string }) {
             fill
             priority={i === 0}
             sizes="(max-width: 1024px) 100vw, 55vw"
-            className="object-cover object-center"
+            className={cn("object-cover object-center", i === index && "animate-[cover-drift_9s_ease-out_forwards]")}
           />
           <span
             className="absolute inset-0 bg-linear-to-t from-black/80 via-black/20 to-black/10"
@@ -53,6 +53,7 @@ export function LoginShowcase({ className }: { className?: string }) {
             <strong className="font-heading text-lg text-white">{d.name}</strong>
             <em className="text-xs not-italic uppercase tracking-widest text-white/85">
               {d.city}
+              {DISTRICT_GALLERY[d.id] && <span className="normal-case tracking-normal text-white/70"> · {DISTRICT_GALLERY[d.id].cover}</span>}
             </em>
           </div>
         </div>
