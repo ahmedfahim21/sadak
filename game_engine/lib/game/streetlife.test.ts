@@ -909,3 +909,54 @@ test("with detail streamed in round the player, every plot near them is still dr
   });
   assert.deepEqual(bare.map((p) => `${p.x.toFixed(0)},${p.z.toFixed(0)}${p.front ? " front" : ""}`), []);
 });
+
+test("traffic stops for a cow in the road (and leans on the horn)", () => {
+  const map = loadMap("dadar-chowk");
+  const traffic = createTraffic(map, { landmark: "mumbai", autoCanopy: 0xf1c40f, autos: 6, cars: 6, vehicleMats: createVehicleMaterials(), transitMat: createTransitMaterial() });
+  const start = new THREE.Vector3(map.spawn.x, 0, map.spawn.z);
+  traffic.prime(start);
+  const v = traffic.vehicles.find((x) => polylineLength(map.roads[x.road].pts) - x.p > 30)!;
+  assert.ok(v, "no vehicle with a clear run ahead");
+  const cow = { x: v.mesh.position.x + Math.sin(v.yaw) * (v.halfLength + 7), z: v.mesh.position.z + Math.cos(v.yaw) * (v.halfLength + 7), r: 1.1 };
+  // The player is well out of the way; only the cow is in the road.
+  const away = new THREE.Vector3(cow.x + 60, 0, cow.z + 60);
+  let closest = Infinity;
+  let held = false;
+  for (let i = 0; i < 200; i++) {
+    traffic.update(0.05, i * 0.05, away, [cow]);
+    held ||= Boolean(v.heldUp);
+    const c = Math.cos(v.yaw);
+    const sn = Math.sin(v.yaw);
+    const dx = cow.x - v.mesh.position.x;
+    const dz = cow.z - v.mesh.position.z;
+    if (Math.abs(dx * c - dz * sn) < v.halfWidth + 1) closest = Math.min(closest, dx * sn + dz * c - v.halfLength);
+  }
+  assert.ok(closest < 5, `never came up to the cow (gap ${closest.toFixed(2)}m)`);
+  assert.ok(closest > 1.1, `drove into the cow (gap ${closest.toFixed(2)}m)`);
+  assert.ok(held, "stopped without being held up");
+});
+
+test("a few cows and dogs per city, walking the streets; cows are solid, dogs step aside", async () => {
+  const { createAnimals, ANIMALS } = await import("./world/animals");
+  for (const d of SEED_DISTRICTS) {
+    const spec = ANIMALS[d.theme.landmark];
+    assert.ok(spec.cows + spec.dogs <= 9, `${d.id}: that's a herd`);
+    assert.ok(spec.dogs >= 3, `${d.id}: every street has its dogs`);
+  }
+  const map = loadMap("purani-sadak");
+  const animals = createAnimals(map, "delhi", () => 0.2);
+  assert.equal(animals.count, ANIMALS.delhi.cows + ANIMALS.delhi.dogs);
+  const focus = new THREE.Vector3(map.spawn.x, 0, map.spawn.z);
+  animals.prime(focus);
+  const start = animals.group.children.map((c) => c.position.clone());
+  for (let i = 0; i < 30 * 40; i++) animals.update(1 / 30, focus);
+  const moved = animals.group.children.filter((c, i) => c.position.distanceTo(start[i]) > 1).length;
+  assert.ok(moved >= 2, `only ${moved} animals moved in 40s`);
+  // Every animal near the player (they live round them).
+  for (const c of animals.group.children) assert.ok(Math.hypot(c.position.x - focus.x, c.position.z - focus.z) < 160);
+  // Cows block; nothing blocks where there are none.
+  const cows = animals.group.children.slice(0, ANIMALS.delhi.cows);
+  assert.ok(cows.every((c) => animals.hit(c.position.x, c.position.z, 0.55)), "walked through a cow");
+  const dogs = animals.group.children.slice(ANIMALS.delhi.cows);
+  assert.ok(dogs.every((c) => !animals.hit(c.position.x, c.position.z, 0.1) || cows.some((w) => w.position.distanceTo(c.position) < 2)), "a dog blocks");
+});

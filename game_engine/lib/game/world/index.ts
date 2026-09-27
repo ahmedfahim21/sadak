@@ -11,6 +11,7 @@ import type { MaterialLibrary } from "../materials";
 import type { VehicleMaterials } from "../vehicles";
 import { createFilmPosters, createSignAtlas } from "../signage";
 import { createCrowd, type Crowd } from "../crowd";
+import { createAnimals, type Animals } from "./animals";
 import { buildAreas } from "./areas";
 import { buildRoads, footpathStrips, isDrivable, offsetPolyline } from "./roads";
 import { createClutter, type ClutterSites } from "../clutter";
@@ -41,6 +42,8 @@ export type World = {
   height: HeightField;
   traffic: Traffic;
   crowd: Crowd;
+  /** A few cows and dogs about the streets. */
+  animals: Animals;
   /** Map edges the sea runs past; the skyline leaves these open. */
   seaEdges: string[];
   /** The monument interior nearest (x, z) within `max` metres, if any. */
@@ -285,6 +288,9 @@ export function buildWorld(map: MapData, district: District, deps: WorldDeps): W
   });
   group.add(crowd.group);
 
+  const animals = createAnimals(map, theme.landmark, groundAt);
+  group.add(animals.group);
+
   // Pigeons where the city feeds them.
   const flocks = createFlocks(flockSites(map, landmarks.inners, groundAt));
   group.add(flocks.group);
@@ -296,6 +302,7 @@ export function buildWorld(map: MapData, district: District, deps: WorldDeps): W
     height,
     traffic,
     crowd,
+    animals,
     seaEdges: areas.seaEdges,
     innerNear(x, z, max) {
       let best: InnerSpot | null = null;
@@ -313,10 +320,12 @@ export function buildWorld(map: MapData, district: District, deps: WorldDeps): W
       buildings.prime(focus);
       traffic.prime(focus);
       crowd.prime(focus);
+      animals.prime(focus);
     },
     update(dt, t, focus) {
       buildings.update(focus);
-      traffic.update(dt, t, focus);
+      animals.update(dt, focus);
+      traffic.update(dt, t, focus, animals.inRoad());
       crowd.update(dt, focus);
       rails.update(dt);
       areas.update(t);
@@ -327,6 +336,7 @@ export function buildWorld(map: MapData, district: District, deps: WorldDeps): W
     dispose() {
       buildings.dispose();
       crowd.dispose();
+      animals.dispose();
       street.dispose();
       rails.dispose();
       flocks.dispose();
