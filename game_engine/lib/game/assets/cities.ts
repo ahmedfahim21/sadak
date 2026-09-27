@@ -162,6 +162,31 @@ function bentSpar(points: THREE.Vector3[], r: number): THREE.BufferGeometry {
   return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points), 12, r, 5, false);
 }
 
+/** The net's mesh as an alpha map: cords opaque, the gaps nearly clear. Data,
+ *  not a canvas, so it builds outside a browser too (the tests). */
+let netMeshTexture: THREE.DataTexture | null = null;
+function netMesh(): THREE.DataTexture {
+  if (netMeshTexture) return netMeshTexture;
+  const n = 32;
+  const data = new Uint8Array(n * n * 4);
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      // Two cords each way per tile, two texels thick.
+      const cord = x % 16 < 2 || y % 16 < 2;
+      const v = cord ? 255 : 28;
+      data.set([v, v, v, 255], (y * n + x) * 4);
+    }
+  }
+  const t = new THREE.DataTexture(data, n, n);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.generateMipmaps = true;
+  t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.magFilter = THREE.LinearFilter;
+  t.needsUpdate = true;
+  netMeshTexture = t;
+  return t;
+}
+
 export function makeChineseFishingNet(mats?: AssetMaterialLib, seed = 12): THREE.Group {
   const rand = mulberry32(seed);
   const timber = stdMat(TEAK, { roughness: 0.9 }, mats);
@@ -169,7 +194,9 @@ export function makeChineseFishingNet(mats?: AssetMaterialLib, seed = 12): THREE
   const bamboo = stdMat(0xb89a62, { roughness: 0.85 }, mats);
   const rope = stdMat(0xcfc0a0, { roughness: 0.95 }, mats);
   const stone = stdMat(0x9a5a3c, { roughness: 1 }, mats); // laterite
-  const netMat = stdMat(0x4f5a55, { roughness: 1, side: THREE.DoubleSide, transparent: true, opacity: 0.82 }, mats);
+  // The net: pale cord in a square mesh, the sea seen through it; far off
+  // the mipmaps blur it to a haze rather than a flicker of lines.
+  const netMat = stdMat(0xd8d2c0, { roughness: 1, side: THREE.DoubleSide, transparent: true, depthWrite: false, alphaMap: netMesh() }, mats);
   const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
   const parts: Part[] = [];
 
@@ -177,7 +204,8 @@ export function makeChineseFishingNet(mats?: AssetMaterialLib, seed = 12): THREE
   parts.push({ geo: bakedBox(2.7, 0.45, 2.3, 0, 0.225, 0), mat: stone });
   // The gantry: two A-frames, their feet on the footing's corners, meeting
   // at the axle the boom pivots on.
-  const pivot = V(0, 3.4, 0);
+  // High enough that the stones slung off the shore end clear a head.
+  const pivot = V(0, 4.3, 0);
   for (const sx of [-1, 1]) {
     for (const sz of [-1, 1]) parts.push({ geo: spar(V(sx * 1.15, 0.45, sz * 0.95), V(sx * 0.42, pivot.y, 0), 0.13, 0.1), mat: timber });
     parts.push({ geo: spar(V(sx * 0.95, 1.6, -0.62), V(sx * 0.95, 1.6, 0.62), 0.07), mat: dark }); // brace
@@ -207,7 +235,7 @@ export function makeChineseFishingNet(mats?: AssetMaterialLib, seed = 12): THREE
   for (let i = 0; i < 5; i++) {
     const d = -1.6 - i * 0.65;
     const at = along(d);
-    const drop = 0.7 + rand() * 0.5;
+    const drop = 0.3 + rand() * 0.3;
     parts.push({ geo: spar(at, V(0.1 * (i % 2 ? 1 : -1), at.y - drop, at.z), 0.02), mat: rope });
     parts.push({ geo: bakedSphere(0.24 + rand() * 0.06, 0.1 * (i % 2 ? 1 : -1), at.y - drop - 0.2, at.z, { wSeg: 6, hSeg: 5, sy: 0.8 }), mat: stone });
   }
@@ -215,7 +243,8 @@ export function makeChineseFishingNet(mats?: AssetMaterialLib, seed = 12): THREE
   // The net's frame: four bamboo spars bowing out and down from the tip to
   // the corners of the net, and the square net sagging between them.
   const half = 3.6;
-  const netY = 1.3;
+  // Being lifted out: its belly just clear of the water.
+  const netY = 1.1;
   const corners = [V(-half, netY, tip.z - half), V(half, netY, tip.z - half), V(half, netY, tip.z + half), V(-half, netY, tip.z + half)];
   for (const c of corners) {
     const mid = tip.clone().lerp(c, 0.5).add(V(0, 0.9, 0));
@@ -226,11 +255,14 @@ export function makeChineseFishingNet(mats?: AssetMaterialLib, seed = 12): THREE
   for (let i = 0; i < 4; i++) parts.push({ geo: spar(corners[i], corners[(i + 1) % 4], 0.02), mat: rope });
   // The net: a grid pulled down in the middle by its own weight.
   const net = new THREE.PlaneGeometry(half * 2, half * 2, 10, 10).rotateX(-Math.PI / 2);
+  // Some fourteen meshes across (the texture holds two).
+  const uv = net.attributes.uv;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 7, uv.getY(i) * 7);
   const pos = net.attributes.position;
   for (let i = 0; i < pos.count; i++) {
     const u = pos.getX(i) / half;
     const w = pos.getZ(i) / half;
-    const sag = 1.5 * (1 - u * u) * (1 - w * w);
+    const sag = 1.2 * (1 - u * u) * (1 - w * w);
     pos.setY(i, netY - sag);
   }
   net.computeVertexNormals();
