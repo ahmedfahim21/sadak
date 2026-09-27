@@ -16,7 +16,7 @@ import * as THREE from "three";
 import type { Landmark } from "../assets";
 import { autoBodyFor, makeAuto, mulberry32 } from "../props";
 import { makeCar, TRAFFIC_KINDS, type CarKind, type VehicleMaterials } from "../vehicles";
-import { CITY_TRAFFIC, makeBus, makeTwoWheeler } from "../transit";
+import { CITY_TRAFFIC, makeBus, makeTwoWheeler, seatDriver } from "../transit";
 import { makeCycleRickshaw, makeHandRickshaw, makeAmbassadorTaxi } from "../assets";
 import type { MapData, MapRoad } from "./mapData";
 import { isDrivable } from "./roads";
@@ -109,6 +109,13 @@ export function createTraffic(map: MapData, opts: TrafficOpts): Traffic {
   };
 
   const makeMesh = (kind: Kind, seed: number): THREE.Group => {
+    const mesh = vehicleMesh(kind, seed);
+    // Everything on four or three wheels has someone driving it (buses and
+    // two-wheelers build their own).
+    if (mesh.userData.driverSeat) seatDriver(mesh, seed + 11);
+    return mesh;
+  };
+  const vehicleMesh = (kind: Kind, seed: number): THREE.Group => {
     switch (kind) {
       case "bike":
         return makeTwoWheeler(opts.transitMat, seed);

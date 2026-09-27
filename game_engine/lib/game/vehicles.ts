@@ -513,5 +513,7 @@ export function makeCar(mats: VehicleMaterials, opts: CarOptions = {}): THREE.Gr
   /** Half-length, so traffic can keep a gap measured from the bodywork. */
   g.userData.halfLength = hl;
 
+  // Right-hand drive: the driver's seat is on the car's right (-x).
+  g.userData.driverSeat = { seatY: p.belt - 0.55, z: p.roofFront - 0.62, x: -p.width * 0.2 };
   return g;
 }

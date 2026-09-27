@@ -122,13 +122,14 @@ export class Rides {
   }
 
   /** Put the player in the errand's auto and drive to the next errand. */
-  startAuto(task: StreetTask, auto: THREE.Object3D, tasks: StreetTask[], done: Set<string>) {
+  /** False if there is no road to drive it on (the auto stays put). */
+  startAuto(task: StreetTask, auto: THREE.Object3D, tasks: StreetTask[], done: Set<string>): boolean {
     const pos = auto.getWorldPosition(new THREE.Vector3());
     const dest = this.nextStop(task, tasks, done);
     const path = planRoute(this.map, pos.x, pos.z, dest.x, dest.z, 4.2, 1.6, { closest: true });
     if (!path) {
       console.warn(`[rides] no route for the auto from ${task.id} to ${dest.label}`);
-      return;
+      return false;
     }
     // Lift the auto out of the errand's set piece into the world.
     const vehicle = new THREE.Group();
@@ -153,6 +154,7 @@ export class Rides {
       linger: 0,
     };
     drive(this.ride, 0);
+    return true;
   }
 
   /** Board the waiting bus and ride it to the next stop along. */

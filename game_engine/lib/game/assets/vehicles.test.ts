@@ -43,3 +43,30 @@ test("an auto: three wheels, auto-sized, the body in its city's colour", () => {
   assert.equal((a.userData.wheels as THREE.Object3D[]).length, 3);
   assert.notEqual(autoBodyFor("delhi"), autoBodyFor("mumbai"), "Delhi's CNG green, Mumbai's black");
 });
+
+test("every vehicle in traffic has a driver, seated inside it (a hand rickshaw's puller at the shafts)", async () => {
+  const { makeCycleRickshaw } = await import("./delhi");
+  const { makeAmbassadorTaxi, makeHandRickshaw } = await import("./kolkata");
+  const { makeAuto } = await import("../props");
+  const { makeCar, createVehicleMaterials, TRAFFIC_KINDS } = await import("../vehicles");
+  const { seatDriver } = await import("../transit");
+  const mats = createVehicleMaterials();
+  const vehicles: [string, THREE.Group][] = [
+    ["auto", makeAuto()],
+    ["cycle rickshaw", makeCycleRickshaw(undefined, 3)],
+    ["hand rickshaw", makeHandRickshaw(undefined, 3)],
+    ["ambassador", makeAmbassadorTaxi(undefined, 3)],
+    ...TRAFFIC_KINDS.map((k) => [k, makeCar(mats, { kind: k, seed: 5 })] as [string, THREE.Group]),
+  ];
+  for (const [name, v] of vehicles) {
+    const body = new THREE.Box3().setFromObject(v);
+    const d = seatDriver(v, 7);
+    const man = new THREE.Box3().setFromObject(d);
+    assert.equal(v.userData.driver, d, name);
+    // Within the vehicle's footprint, and (under a roof) below it.
+    assert.ok(man.min.x >= body.min.x - 0.05 && man.max.x <= body.max.x + 0.05, `${name}: driver sticks out sideways`);
+    assert.ok(man.min.z >= body.min.z - 0.05 && man.max.z <= body.max.z + 0.3, `${name}: driver sticks out ahead or behind`);
+    if (name !== "cycle rickshaw" && name !== "hand rickshaw") assert.ok(man.max.y <= body.max.y, `${name}: head through the roof (${man.max.y.toFixed(2)} > ${body.max.y.toFixed(2)})`);
+    assert.ok(man.max.y > 1, `${name}: driver too low to be seen`);
+  }
+});
