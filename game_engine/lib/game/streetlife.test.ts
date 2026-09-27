@@ -764,6 +764,28 @@ test("a deul's stepped-in corners are open, and a plinth low enough to step onto
   assert.ok(frontEdge(high.colliders) > 0, "a tall plinth can be walked up anywhere");
 });
 
+test("Bengaluru's cinemas are its own single screens, no two alike; Mumbai's stays Art Deco", () => {
+  const colours = (id: string, city: Landmark) => {
+    const map = loadMap(id);
+    const { group } = placeLandmarks(map.landmarks.filter((l) => l.model === "cinema"), city, new CollisionWorld(), new HeightField(map.half));
+    return group.children.map((g) => {
+      let name = "";
+      const cols: string[] = [];
+      g.traverse((o) => {
+        if (/single-screen|art-deco/.test(o.name)) name = o.name;
+        const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
+        if ((o as THREE.Mesh).isMesh && m?.color) cols.push(m.color.getHexString());
+      });
+      return { name, look: cols.sort().join(",") };
+    });
+  };
+  const blr = colours("majestic-cross", "bengaluru");
+  assert.equal(blr.length, 4);
+  for (const c of blr) assert.equal(c.name, "bengaluru-single-screen");
+  assert.equal(new Set(blr.map((c) => c.look)).size, 4, "two of Majestic's cinemas look the same");
+  for (const c of colours("dadar-chowk", "mumbai")) assert.equal(c.name, "mumbai-art-deco-cinema");
+});
+
 /** The map's static collision, as buildWorld registers it. */
 function mapCollision(map: MapData, landmark: Landmark) {
   const world = new CollisionWorld();

@@ -236,6 +236,8 @@ export {
   makeScaffolding,
   makeMetroPillar,
   makeDeliveryBike,
+  makeSingleScreenCinema,
+  singleScreenCinemaSolids,
 } from "./bengaluru";
 export {
   makeAmbassadorTaxi,

@@ -13,6 +13,8 @@ import * as THREE from "three";
 import type { Landmark } from "../assets";
 import {
   makeArtDecoCinema,
+  makeSingleScreenCinema,
+  singleScreenCinemaSolids,
   makeChineseFishingNet,
   makeStreetMandir,
 } from "../assets";
@@ -123,8 +125,9 @@ const CINEMA_HALL: Solid[] = [
  *  over the water, which blocks on its own. */
 const FISHING_NET_GROUND: Solid[] = [[-1.35, -1.15, 1.35, 1.15]];
 
-/** Builds the model for one landmark, in its local frame. */
-export function buildLandmark(l: MapLandmark, city: Landmark, clear?: ClearTest): Monument {
+/** `variant`: which of the district's landmarks of this model it is (0, 1, ...),
+ *  so a row of them (Majestic's cinemas) doesn't repeat. */
+export function buildLandmark(l: MapLandmark, city: Landmark, clear?: ClearTest, variant = 0): Monument {
   const ms = MOSQUE[city] ?? MOSQUE.default;
   const ts = TEMPLE[city] ?? TEMPLE.default;
   const { w, d } = l;
@@ -192,7 +195,11 @@ export function buildLandmark(l: MapLandmark, city: Landmark, clear?: ClearTest)
     case "cinema": {
       // Out at the front of its plot, on the street, the rest a forecourt behind.
       const [cw, cd] = modelExtent(l.model, w, d);
-      const m = fit(makeArtDecoCinema(), cw, cd, 3, CINEMA_HALL);
+      // Bombay's are Art Deco; Bengaluru's, 1970s single screens, each its own colours.
+      const m =
+        city === "bengaluru"
+          ? fit(makeSingleScreenCinema(undefined, variant), cw, cd, 3, singleScreenCinemaSolids(variant))
+          : fit(makeArtDecoCinema(), cw, cd, 3, CINEMA_HALL);
       const dz = (d - cd) / 2;
       // Shifted inside the landmark's group: placing the landmark sets that
       // group's own position, which would drop the shift and leave the hall's
@@ -242,7 +249,10 @@ export function placeLandmarks(
   const group = new THREE.Group();
   group.name = "landmarks";
   const inners: InnerSpot[] = [];
+  const seen = new Map<string, number>();
   for (const l of landmarks) {
+    const variant = seen.get(l.model) ?? 0;
+    seen.set(l.model, variant + 1);
     const c = Math.cos(l.rot);
     const s = Math.sin(l.rot);
     // Local (u, v) -> world: local +x = (cos, -sin), local +z = (sin, cos).
@@ -257,7 +267,7 @@ export function placeLandmarks(
       }
       return true;
     };
-    const m = buildLandmark(l, city, clear);
+    const m = buildLandmark(l, city, clear, variant);
     m.group.position.set(l.x, 0, l.z);
     m.group.rotation.y = l.rot;
     m.group.userData.landmark = l.name;
