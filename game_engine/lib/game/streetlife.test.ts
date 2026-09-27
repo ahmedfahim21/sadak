@@ -709,6 +709,39 @@ test("you can walk under Charminar's arches and into a cinema's forecourt, not t
   assert.equal(cw.blocked(...at(cinema, 0, 0), 0.1), true, "the hall is not solid");
 });
 
+test("a cinema's hall and a fishing net's posts are drawn where they collide (no walls of air)", () => {
+  for (const [id, model, city] of [["majestic-cross", "cinema", "bengaluru"], ["dadar-chowk", "cinema", "mumbai"], ["fort-kochi", "fishing_nets", "kochi"]] as const) {
+    const map = loadMap(id);
+    for (const l of map.landmarks.filter((l) => l.model === model)) {
+      const cw = new CollisionWorld();
+      const { group } = placeLandmarks([l], city, cw, new HeightField(map.half));
+      group.updateMatrixWorld(true);
+      const meshes: THREE.Object3D[] = [];
+      group.traverse((o) => { if ((o as THREE.Mesh).isMesh) meshes.push(o); });
+      const ray = new THREE.Raycaster();
+      for (const c of cw.all) {
+        if (c.kind !== "box") continue;
+        const cs = Math.cos(c.rot);
+        const sn = Math.sin(c.rot);
+        // From 3m outside each side's middle, straight in: something drawn by the edge (or out past it).
+        for (const [u, v, half] of [[1, 0, c.hw], [-1, 0, c.hw], [0, 1, c.hd], [0, -1, c.hd]]) {
+          const ox = c.x + (u * cs + v * sn) * (half + 3);
+          const oz = c.z + (-u * sn + v * cs) * (half + 3);
+          // Only from where the player can stand (an edge inside another collider,
+          // like the curve's steps against the hall, can't be walked up to).
+          if (cw.blocked(ox, oz, 0.55)) continue;
+          const seen = [0.35, 1.3].some((y) => {
+            ray.set(new THREE.Vector3(ox, y, oz), new THREE.Vector3(-(u * cs + v * sn), 0, u * sn - v * cs));
+            ray.far = 3.3;
+            return ray.intersectObjects(meshes, false).length > 0;
+          });
+          assert.ok(seen, `${l.name}: nothing drawn at the ${u ? (u > 0 ? "+u" : "-u") : v > 0 ? "+v" : "-v"} edge of a ${(c.hw * 2).toFixed(1)}x${(c.hd * 2).toFixed(1)} collider`);
+        }
+      }
+    }
+  }
+});
+
 /** The map's static collision, as buildWorld registers it. */
 function mapCollision(map: MapData, landmark: Landmark) {
   const world = new CollisionWorld();

@@ -111,10 +111,21 @@ function fit(model: THREE.Group, w: number, d: number, maxScale = 3, solids?: So
  *  the forecourt under the marquee, out to its front posts, is open. Boxes
  *  reaching past the curve were walls of air at its shoulders. */
 const CINEMA_HALL: Solid[] = [
-  [-4.5, -3.0, 4.5, 3.2],
+  [-4.5, -3.0, 4.5, 3.0],
   [-7.33, -1, -4.5, 1],
   [-6.74, -2, -4.5, 2],
   [-6.0, -2.6, -4.5, 2.6],
+];
+
+/** What of a Chinese fishing net stands on the ground (makeChineseFishingNet,
+ *  its own frame, measured): the pivot's two posts and the pile of
+ *  counterweight stones. Everything else at body height is thin frame and
+ *  rope; the boom and the net are overhead or over the water, which blocks
+ *  on its own. A box over the whole reach, or over the net's end, was air. */
+const FISHING_NET_GROUND: Solid[] = [
+  [-1.12, -0.22, -0.83, 0.08],
+  [0.83, -0.22, 1.12, 0.08],
+  [-0.4, 8.95, 0.4, 9.6],
 ];
 
 /** Builds the model for one landmark, in its local frame. */
@@ -188,7 +199,10 @@ export function buildLandmark(l: MapLandmark, city: Landmark, clear?: ClearTest)
       const [cw, cd] = modelExtent(l.model, w, d);
       const m = fit(makeArtDecoCinema(), cw, cd, 3, CINEMA_HALL);
       const dz = (d - cd) / 2;
-      m.group.position.z = dz;
+      // Shifted inside the landmark's group: placing the landmark sets that
+      // group's own position, which would drop the shift and leave the hall's
+      // colliders standing in the forecourt.
+      m.group.children[0].position.z += dz;
       return { ...m, colliders: m.colliders.map((c) => ({ ...c, z: c.z + dz })) };
     }
     case "fishing_nets": {
@@ -198,17 +212,13 @@ export function buildLandmark(l: MapLandmark, city: Landmark, clear?: ClearTest)
       // Each net's boom reaches out some twenty metres over the water.
       const n = Math.max(2, Math.floor(w / 20));
       for (let i = 0; i < n; i++) {
-        const net = fit(makeChineseFishingNet(undefined, 40 + i), 20, 20, 2);
+        const net = fit(makeChineseFishingNet(undefined, 40 + i), 20, 20, 2, FISHING_NET_GROUND);
         net.group.position.x = -w / 2 + (w * (i + 0.5)) / n;
         // The boom and net reach out over the water, off the landmark's back.
         net.group.rotation.y = Math.PI;
         g.add(net.group);
-        // Only the shore end stands on the ground (the pivot, its platform,
-        // the counterweight stones); the boom and net hang over the water,
-        // which blocks on its own. A box over the whole reach was a wall of
-        // air across the promenade.
-        const c = net.colliders[0];
-        colliders.push({ x: net.group.position.x, z: c.z + c.hd - 1.3, hw: c.hw, hd: 1.3 });
+        // Turned round with the net: (x, z) -> (-x, -z).
+        for (const c of net.colliders) colliders.push({ x: net.group.position.x - c.x, z: -c.z, hw: c.hw, hd: c.hd });
       }
       return { group: g, colliders, heights: [] };
     }
