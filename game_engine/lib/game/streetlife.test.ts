@@ -742,6 +742,28 @@ test("a cinema's hall and a fishing net's posts are drawn where they collide (no
   }
 });
 
+test("a deul's stepped-in corners are open, and a plinth low enough to step onto has no fence round it", async () => {
+  const { deul } = await import("./world/odisha");
+  const { temple } = await import("./world/monuments");
+  const inside = (cs: { x: number; z: number; hw: number; hd: number }[], x: number, z: number) =>
+    cs.some((c) => Math.abs(x - c.x) < c.hw && Math.abs(z - c.z) < c.hd);
+  // The tower's colliders: its middle solid, its corners (drawn stepped in) open.
+  const m = deul(20, 30);
+  const tower = m.colliders.reduce((a, c) => (c.hw * c.hd > a.hw * a.hd ? c : a));
+  const [cx, cz, b] = [tower.x, tower.z, Math.max(...m.colliders.filter((c) => c.z === tower.z).map((c) => c.hw)) * 2];
+  assert.ok(inside(m.colliders, cx, cz), "the tower is not solid");
+  assert.ok(inside(m.colliders, cx + b * 0.49, cz), "the tower's rib is not solid");
+  assert.ok(!inside(m.colliders, cx + b * 0.47, cz + b * 0.47), "a corner of the tower is a wall of air");
+  // A 0.6m plinth: only the temple's own parts collide, nothing along the plinth's front edge.
+  const style = { stone: 0xf2e8d5, accent: 0xd9642b, kind: "nagara", tower: 1.2 } as const;
+  const low = temple(8, 10, { ...style, plinth: 0.6 });
+  const high = temple(8, 10, { ...style, plinth: 1.1 });
+  // The edge walls: 0.5m deep strips (the mandapa's pillars are 0.5m square).
+  const frontEdge = (cs: typeof low.colliders) => cs.filter((c) => c.hd === 0.25 && c.hw !== 0.25 && c.z > 2).length;
+  assert.equal(frontEdge(low.colliders), 0, "a steppable plinth is fenced");
+  assert.ok(frontEdge(high.colliders) > 0, "a tall plinth can be walked up anywhere");
+});
+
 /** The map's static collision, as buildWorld registers it. */
 function mapCollision(map: MapData, landmark: Landmark) {
   const world = new CollisionWorld();

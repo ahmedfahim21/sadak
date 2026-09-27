@@ -56,6 +56,9 @@ export function finish(
  * footprint. Returns the platform's depth span so builders can lay things
  * out on top. Edge walls stop the player walking off (or up) the sides.
  */
+/** The highest plinth a person steps up onto anywhere along its edge, metres. */
+const STEPPABLE = 0.7;
+
 function platform(
   P: Parts,
   C: LocalBox[],
@@ -80,7 +83,10 @@ function platform(
   for (const s of [-1, 1]) P.box(0.6, rise + 0.3, run, s * (stairW / 2 + 0.3), (rise + 0.3) / 2, d / 2 - run / 2, stone);
   Hs.push({ x: 0, z: zc, hw: w / 2, hd: depth / 2, y0: rise, y1: rise });
   Hs.push({ x: 0, z: d / 2 - run / 2, hw: stairW / 2, hd: run / 2, y0: rise, y1: 0 });
-  if (edgeWalls) {
+  // Walls round the edge keep the player off a plinth except by its stair;
+  // one low enough to step onto (and off) is just a step, and a wall along
+  // it was an invisible fence when standing on top.
+  if (edgeWalls && rise > STEPPABLE) {
     const t = 0.5;
     C.push({ x: 0, z: top + t / 2, hw: w / 2, hd: t / 2 });
     for (const s of [-1, 1]) C.push({ x: (s * (w - t)) / 2, z: zc, hw: t / 2, hd: depth / 2 });

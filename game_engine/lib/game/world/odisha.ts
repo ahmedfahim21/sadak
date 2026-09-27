@@ -30,6 +30,15 @@ function amalaka(P: Parts, r: number, h: number, x: number, y: number, z: number
   P.add(new THREE.SphereGeometry(r, 24, 6).scale(1, (h * 0.8) / r, 1).translate(x, y + h / 2, z), stone);
 }
 
+/** A rekha tower's footprint at the ground, as `rekha` draws it: the core
+ *  (0.84 of the base) and the central ribs out to the full width. A square
+ *  collider over the whole base was air at its four stepped-in corners. */
+export function rekhaFootprint(C: LocalBox[], x: number, z: number, b: number) {
+  C.push({ x, z, hw: b * 0.42, hd: b * 0.42 });
+  C.push({ x, z, hw: b / 2, hd: b * 0.18 });
+  C.push({ x, z, hw: b * 0.18, hd: b / 2 });
+}
+
 /**
  * A rekha deul's tower, `b` across at the base and `H` tall, standing on y:
  * stacked courses whose plan steps out in three ribs a face, the batter
@@ -190,7 +199,7 @@ export function lingaraj(w: number, d: number): Monument {
   Hs.push({ x: 0, z: p1 + 1.2, hw: b * 0.3, hd: 1.2, y0: plinth, y1: 0 });
 
   rekha(P, 0, plinth, zDeul, b, H, SANDSTONE, SHADOW);
-  C.push({ x: 0, z: zDeul, hw: b / 2, hd: b / 2 });
+  rekhaFootprint(C, 0, zDeul, b);
   pidha(P, 0, plinth, zJag, b * 0.9, b * 0.5, SANDSTONE, SHADOW);
   C.push({ x: 0, z: zJag, hw: b * 0.45, hd: b * 0.45 });
   pidha(P, 0, plinth, zNat, b * 0.75, b * 0.36, SANDSTONE, SHADOW);
@@ -242,7 +251,7 @@ export function deul(w: number, d: number): Monument {
   const zJ = zD + b * 0.95;
   rekha(P, 0, plinth, zD, b, b * 2.2, SANDSTONE, SHADOW);
   pidha(P, 0, plinth, zJ, b * 0.8, b * 0.45, SANDSTONE, SHADOW);
-  C.push({ x: 0, z: zD, hw: b / 2, hd: b / 2 });
+  rekhaFootprint(C, 0, zD, b);
   C.push({ x: 0, z: zJ, hw: b * 0.4, hd: b * 0.4 });
   P.steps(Math.min(3, w * 0.4), plinth, 0, d / 2 + 1.3, SANDSTONE);
   Hs.push({ x: 0, z: d / 2 + 0.65, hw: Math.min(3, w * 0.4) / 2, hd: 0.65, y0: plinth, y1: 0 });
