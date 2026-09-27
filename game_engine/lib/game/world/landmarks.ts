@@ -41,6 +41,8 @@ import {
   promenade,
   smallMosque,
   temple,
+  gurjaraTemple,
+  waysideShrine,
   tomb,
   type Monument,
   type MosqueStyle,
@@ -144,11 +146,18 @@ export function buildLandmark(l: MapLandmark, city: Landmark, clear?: ClearTest,
     case "tomb":
       return tomb(...modelExtent(l.model, w, d), ms);
     case "temple":
-    case "shrine":
+    case "shrine": {
+      const [tw, td] = modelExtent(l.model, w, d);
       // Chennai's and Bengaluru's temples are Dravidian.
-      return l.model === "temple" && (city === "chennai" || city === "bengaluru")
-        ? smallDravidianTemple(...modelExtent(l.model, w, d))
-        : temple(...modelExtent(l.model, w, d), ts);
+      if (l.model === "temple" && (city === "chennai" || city === "bengaluru")) return smallDravidianTemple(tw, td);
+      // A Swaminarayan mandir, and Ahmedabad's shrines: Gujarati, domed and clustered.
+      if (/swami ?narayan/i.test(l.name)) return gurjaraTemple(tw, td, { stone: 0xf4f1ea, trim: 0xe3d6bd, plinth: 1.2 });
+      if (city === "ahmedabad") return gurjaraTemple(tw, td, { stone: 0xd9b38c, trim: 0xc49a6c, plinth: 1.0 });
+      // The street-corner shrines: Hanuman's in sindoor, the Bhagyalaxmi's whitewashed under its tin.
+      if (/hanuman/i.test(l.name)) return waysideShrine(tw, td, { wall: 0xe8601c, roof: 0x7d8a94, tower: "curved" });
+      if (/bhagyalaxmi/i.test(l.name)) return waysideShrine(tw, td, { wall: 0xf2efe8, roof: 0x8a969e, tower: "dome" });
+      return temple(tw, td, ts);
+    }
     case "deul_small":
       return deul(...modelExtent(l.model, w, d));
     case "lingaraj":

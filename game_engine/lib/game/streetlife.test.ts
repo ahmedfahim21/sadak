@@ -801,6 +801,20 @@ test("Vasco da Gama Square is furnished: a railing to the sea, a tree, benches, 
   assert.ok(!m.colliders.some((c) => Math.abs(1 - c.x) < c.hw && Math.abs(1.5 - c.z) < c.hd), "the square's middle is blocked");
 });
 
+test("each city's small temples are its own: Gujarati marble or sandstone, a wayside shrine, the North Indian shikhara", () => {
+  const form = (id: string, name: string) => {
+    const map = loadMap(id);
+    const l = map.landmarks.find((l) => l.name === name)!;
+    const d = SEED_DISTRICTS.find((x) => x.id === id)!;
+    return buildLandmark(l, d.theme.landmark).group.name;
+  };
+  assert.equal(form("dadar-chowk", "Swami Narayan Mandir"), "gurjara-temple");
+  assert.equal(form("manek-chowk", "Maneknath Mandir"), "gurjara-temple");
+  assert.equal(form("dadar-chowk", "Hanuman temple"), "wayside-shrine");
+  assert.equal(form("charminar-lane", "Bhagyalaxmi Temple"), "wayside-shrine");
+  assert.equal(form("purani-sadak", "Gauri Shankar Hindu Temple"), "");
+});
+
 /** The map's static collision, as buildWorld registers it. */
 function mapCollision(map: MapData, landmark: Landmark) {
   const world = new CollisionWorld();

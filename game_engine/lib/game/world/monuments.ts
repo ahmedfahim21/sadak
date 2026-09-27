@@ -345,6 +345,177 @@ export function temple(w: number, d: number, st: TempleStyle): Monument {
   return finish(P, C, Hs, { x: 0, z: sz + s / 2 + 1.6 });
 }
 
+/**
+ * A Gujarati (Maru-Gurjara) temple, as the Swaminarayan mandirs and
+ * Ahmedabad's old shrines are built: a moulded plinth up a flight of steps,
+ * an open hall of carved pillars under a low ghumat dome ringed by small
+ * kiosks, balconied windows (jharokhas) on its flanks, and behind it the
+ * sanctum's spire clustered with smaller spires (urushringas) climbing its
+ * faces, a gilded pot and a saffron flag on each. Marble or sandstone.
+ */
+export function gurjaraTemple(w: number, d: number, o: { stone: number; trim: number; plinth: number }): Monument {
+  const P = new Parts();
+  const C: LocalBox[] = [];
+  const Hs: LocalRect[] = [];
+  const pf = platform(P, C, Hs, w, d, o.plinth, o.stone, 0.4);
+  const y = o.plinth;
+  // Mouldings round the plinth.
+  for (const k of [0.3, 0.65]) P.box(w + 0.12, 0.12, pf.depth + 0.12, 0, o.plinth * k, pf.zc, o.trim);
+
+  // The sanctum at the back, its spire clustered with smaller spires.
+  const s = Math.min(w * 0.42, pf.depth * 0.42);
+  const sz = pf.top + s / 2 + 0.4;
+  const sh = s * 0.7;
+  P.box(s, sh, s, 0, y + sh / 2, sz, o.stone);
+  for (const f of [0.25, 0.75]) P.box(s + 0.1, 0.1, s + 0.1, 0, y + sh * f, sz, o.trim);
+  C.push({ x: 0, z: sz, hw: s / 2, hd: s / 2 });
+  const spire = (x: number, yy: number, z: number, b: number, h: number) => {
+    const n = 7;
+    for (let i = 0; i < n; i++) {
+      const t = i / n;
+      const bs = b * (1 - Math.pow(t, 1.6) * 0.7);
+      P.box(bs, (h / n) * 0.94, bs, x, yy + (h / n) * (i + 0.5), z, i % 2 ? o.trim : o.stone);
+    }
+    P.add(new THREE.SphereGeometry(b * 0.22, 10, 6).scale(1, 0.45, 1).translate(x, yy + h + b * 0.06, z), o.trim);
+    P.cone(b * 0.08, b * 0.3, x, yy + h + b * 0.2, z, GOLD, 8);
+  };
+  const H = Math.max(4, s * 1.9);
+  spire(0, y + sh, sz, s * 0.95, H);
+  // Urushringas: half-height spires on each face, and smaller at the corners.
+  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) spire(dx * s * 0.42, y + sh, sz + dz * s * 0.42, s * 0.42, H * 0.55);
+  for (const [dx, dz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) spire(dx * s * 0.44, y + sh, sz + dz * s * 0.44, s * 0.26, H * 0.34);
+  P.cyl(0.05, 0.05, 1.8, 0, y + sh + H + s * 0.4, sz, 0x5b3a22, 4);
+  P.box(0.05, 0.5, 0.9, 0, y + sh + H + s * 0.4 + 0.6, sz + 0.45, SAFFRON);
+
+  // The hall: carved pillars (square shaft, octagonal band, bracket
+  // capital) under a beamed roof, open at the front and sides.
+  const mw = Math.min(w * 0.82, s * 1.6);
+  const md = Math.max(3, pf.front - (sz + s / 2) - 0.4);
+  const mz = sz + s / 2 + md / 2;
+  const ph = Math.min(3.6, 2.4 + mw * 0.08);
+  const xs = mw >= 7 ? [-mw / 2 + 0.3, -mw / 6, mw / 6, mw / 2 - 0.3] : [-mw / 2 + 0.3, mw / 2 - 0.3];
+  for (const px of xs) {
+    for (const pz of [mz - md / 2 + 0.3, mz + md / 2 - 0.3]) {
+      P.box(0.34, ph * 0.55, 0.34, px, y + ph * 0.275, pz, o.stone);
+      P.cyl(0.2, 0.2, ph * 0.25, px, y + ph * 0.67, pz, o.trim, 8);
+      P.box(0.34, ph * 0.12, 0.34, px, y + ph * 0.86, pz, o.stone);
+      P.box(0.8, 0.14, 0.3, px, y + ph * 0.96, pz, o.trim); // bracket capital
+      C.push({ x: px, z: pz, hw: 0.2, hd: 0.2 });
+    }
+  }
+  P.box(mw + 0.6, 0.35, md + 0.6, 0, y + ph + 0.17, mz, o.stone);
+  P.box(mw + 0.9, 0.12, md + 0.9, 0, y + ph + 0.4, mz, o.trim); // chhajja
+  // The ghumat: a low dome on a drum, ringed by small kiosks at the corners.
+  const r = Math.min(mw, md) * 0.36;
+  P.cyl(r * 1.05, r * 1.05, 0.5, 0, y + ph + 0.7, mz, o.stone, 16);
+  P.dome(r, 0, y + ph + 0.95, mz, o.stone, 1);
+  P.cone(0.1, 0.45, 0, y + ph + 0.95 + r * 1.3, mz, GOLD, 8);
+  for (const [dx, dz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+    const kx = dx * (mw / 2 - 0.3);
+    const kz = mz + dz * (md / 2 - 0.3);
+    for (const [a, b] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) P.box(0.08, 0.7, 0.08, kx + a * 0.3, y + ph + 0.8, kz + b * 0.3, o.stone);
+    P.dome(0.42, kx, y + ph + 1.15, kz, o.stone, 1);
+  }
+  // Jharokhas: a balconied window on each flank of the hall.
+  for (const sx of [-1, 1]) {
+    const jx = sx * (mw / 2 + 0.35);
+    P.box(0.7, 0.18, 1.4, jx, y + ph * 0.45, mz, o.trim);
+    for (const bz of [-0.55, 0, 0.55]) P.box(0.08, 0.9, 0.08, jx + sx * 0.25, y + ph * 0.45 + 0.54, mz + bz, o.stone);
+    P.box(0.8, 0.1, 1.6, jx, y + ph * 0.45 + 1.05, mz, o.trim);
+    P.dome(0.45, jx, y + ph * 0.45 + 1.1, mz, o.stone, 1);
+  }
+  // Bell at the sanctum door.
+  P.cyl(0.02, 0.02, 0.5, 0, y + ph - 0.25, sz + s / 2 + 0.6, 0x3a3a3a, 4);
+  P.cone(0.16, 0.26, 0, y + ph - 0.6, sz + s / 2 + 0.6, GOLD, 8);
+  P.box(s * 0.3, sh * 0.6, 0.08, 0, y + sh * 0.3, sz + s / 2 + 0.04, DARK);
+  const m = finish(P, C, Hs, { x: 0, z: sz + s / 2 + 1.4 });
+  m.group.name = "gurjara-temple";
+  return m;
+}
+
+/**
+ * A wayside shrine, the kind on every Indian street corner (a Hanuman
+ * temple, the Bhagyalaxmi shrine at the Charminar's foot): a small cella
+ * painted in sindoor orange or whitewash, a little tower on it, and in
+ * front a tin canopy on steel posts hung with brass bells and marigold
+ * strings, a couple of steps up, saffron flags on bamboo, a lamp glowing
+ * in the doorway.
+ */
+export function waysideShrine(w: number, d: number, o: { wall: number; roof: number; tower: "curved" | "dome" }): Monument {
+  const P = new Parts();
+  const C: LocalBox[] = [];
+  const Hs: LocalRect[] = [];
+  const s = Math.max(2.2, Math.min(3.6, Math.min(w, d) * 0.45));
+  const rise = 0.34;
+  const cz = -d / 2 + s / 2 + 0.6;
+  // The platform: two steps up (low enough to step on anywhere).
+  const pd = Math.min(d - 0.4, s + 3.2);
+  const pz = -d / 2 + 0.2 + pd / 2;
+  P.box(Math.min(w - 0.4, s + 2.4), rise, pd, 0, rise / 2, pz, 0xd8d0c0);
+  P.box(Math.min(w - 0.4, s + 2.4) + 0.4, rise / 2, 0.4, 0, rise / 4, pz + pd / 2 + 0.2, 0xd8d0c0);
+  Hs.push({ x: 0, z: pz, hw: Math.min(w - 0.4, s + 2.4) / 2, hd: pd / 2, y0: rise, y1: rise });
+  // The cella.
+  const ch = s * 0.95;
+  P.box(s, ch, s, 0, rise + ch / 2, cz, o.wall);
+  P.box(s + 0.2, 0.18, s + 0.2, 0, rise + ch + 0.09, cz, 0xf4efe4);
+  P.box(s * 0.42, ch * 0.62, 0.06, 0, rise + ch * 0.31, cz + s / 2 + 0.03, 0x3a1d10);
+  P.box(s * 0.2, ch * 0.3, 0.07, 0, rise + ch * 0.2, cz + s / 2 + 0.04, 0xffc94a); // lamp-lit murti
+  for (const sx of [-1, 1]) P.box(0.12, ch * 0.7, 0.1, sx * s * 0.26, rise + ch * 0.35, cz + s / 2 + 0.05, 0xf4efe4);
+  C.push({ x: 0, z: cz, hw: s / 2, hd: s / 2 });
+  // Its tower: a small curved shikhara, or a dome.
+  if (o.tower === "curved") {
+    // Courses drawing in, all in the shrine's colour, a thin pale band
+    // every other one (not stripes: that read as a traffic cone).
+    const n = 5;
+    const ch2 = s * 0.18;
+    for (let i = 0; i < n; i++) {
+      const bs = s * 0.78 * (1 - Math.pow(i / n, 1.6) * 0.62);
+      const yy = rise + ch + 0.2 + ch2 * (i + 0.5);
+      P.box(bs, ch2 * 0.96, bs, 0, yy, cz, o.wall);
+      if (i % 2) P.box(bs + 0.06, 0.05, bs + 0.06, 0, yy - ch2 * 0.45, cz, 0xf4efe4);
+    }
+    const top = rise + ch + 0.2 + ch2 * n;
+    P.add(new THREE.SphereGeometry(s * 0.15, 10, 5).scale(1, 0.45, 1).translate(0, top + 0.04, cz), 0xf4efe4);
+    P.cone(0.07, 0.3, 0, top + 0.25, cz, GOLD, 6);
+  } else {
+    P.dome(s * 0.36, 0, rise + ch + 0.18, cz, o.wall, 1.1);
+    P.cone(0.07, 0.3, 0, rise + ch + 0.18 + s * 0.55, cz, GOLD, 6);
+  }
+  // The canopy: corrugated tin sloping to the street, on four steel posts.
+  const cw = Math.min(w - 0.6, s + 2);
+  const cdp = Math.min(3, pd - s - 0.4);
+  const ccz = cz + s / 2 + cdp / 2;
+  for (const sx of [-1, 1]) {
+    P.cyl(0.05, 0.05, 2.6, sx * (cw / 2 - 0.1), rise + 1.3, ccz + cdp / 2 - 0.1, 0x6f7479, 6);
+    C.push({ x: sx * (cw / 2 - 0.1), z: ccz + cdp / 2 - 0.1, hw: 0.08, hd: 0.08 });
+  }
+  const tin = new THREE.BoxGeometry(cw + 0.4, 0.05, cdp + 0.4).rotateX(0.12);
+  P.add(tin.translate(0, rise + 2.75, ccz), o.roof);
+  for (let x = -cw / 2; x <= cw / 2; x += 0.3) P.add(new THREE.BoxGeometry(0.04, 0.03, cdp + 0.4).rotateX(0.12).translate(x, rise + 2.79, ccz), 0x5f6a72);
+  // Bells along the front beam and marigold strings looped between the posts.
+  P.box(cw, 0.08, 0.08, 0, rise + 2.45, ccz + cdp / 2 - 0.1, 0x6f7479);
+  for (let x = -cw / 2 + 0.4; x < cw / 2 - 0.2; x += 0.45) {
+    P.cyl(0.01, 0.01, 0.25, x, rise + 2.3, ccz + cdp / 2 - 0.1, 0x3a3a3a, 3);
+    P.cone(0.07, 0.12, x, rise + 2.12, ccz + cdp / 2 - 0.1, GOLD, 8);
+  }
+  for (let k = 0; k <= 12; k++) {
+    const t = k / 12;
+    const x = -cw / 2 + 0.1 + t * (cw - 0.2);
+    const sag = Math.sin(Math.PI * t) * 0.35;
+    P.add(new THREE.SphereGeometry(0.06, 5, 4).translate(x, rise + 2.35 - sag, ccz + cdp / 2 - 0.05), k % 2 ? 0xf5a623 : 0xe8601c);
+  }
+  // Saffron flags on bamboo poles at the back corners.
+  for (const sx of [-1, 1]) {
+    const fx = sx * (s / 2 + 0.35);
+    P.cyl(0.03, 0.03, 4.5, fx, rise + 2.25, cz - s / 2 + 0.1, 0xb89a62, 4);
+    const flag = new THREE.ShapeGeometry(new THREE.Shape([new THREE.Vector2(0, 0), new THREE.Vector2(0, -0.5), new THREE.Vector2(0.8, -0.25)]));
+    P.add(flag.rotateY(-Math.PI / 2).translate(fx, rise + 4.5, cz - s / 2 + 0.1), SAFFRON);
+  }
+  const m = finish(P, C, Hs, { x: 0, z: ccz });
+  m.group.name = "wayside-shrine";
+  return m;
+}
+
 /* ------------------------------------------------------------------ *
  * Churches
  * ------------------------------------------------------------------ */
