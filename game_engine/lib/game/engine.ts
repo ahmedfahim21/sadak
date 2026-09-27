@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { CITY_TRAFFIC, createTransitMaterial } from "./transit";
+import { CITY_TRAFFIC, createTransitMaterial, seatDriver } from "./transit";
 import { autoBodyFor, makeAuto } from "./props";
 import { buildWorld, type World } from "./world";
 import { Rides } from "./rides";
@@ -7,6 +7,7 @@ import { Parts } from "./world/vc";
 import { taskSpot, type MapData, type Spot } from "./world/mapData";
 import { knockFrom } from "./knock";
 import { BOUNDARY_INSET } from "./world/boundary";
+import { createWaypointBeacon } from "./world/beacons";
 import { attireFor } from "./attire";
 import { makeHero, HeroAnimator, type HeroRig } from "./hero";
 import { newBody, stepBody, SPRINT_SPEED } from "./movement";
@@ -344,6 +345,14 @@ export class Game {
     this.scene.add(bounce);
   }
 
+  /** The waypoint marked on the full map: a pillar of light over the spot. */
+  private beacon = createWaypointBeacon();
+
+  public setWaypoint(w: { x: number; z: number } | null) {
+    if (w) this.beacon.set(w.x, w.z, this.world.height.at(w.x, w.z));
+    else this.beacon.clear();
+  }
+
   private buildWorld(toon: (m: THREE.Material) => THREE.Material) {
     this.world = buildWorld(this.map, this.district, {
       mats: this.materials,
@@ -352,6 +361,7 @@ export class Game {
       toon,
     });
     this.scene.add(this.world.group);
+    this.scene.add(this.beacon.group);
     this.rides = new Rides(this.scene, this.world, this.map, this.district, this.vehicleMats, this.transitMat);
     this.buildTaskSites();
     this.buildBarberSite();
@@ -414,6 +424,9 @@ export class Game {
         // with his taxi, parked a little further off (it is longer).
         const taxi = CITY_TRAFFIC[theme.landmark].hire === "taxi";
         const cab = taxi ? this.makeTaxi(theme.landmark, hashId(task.id)) : makeAuto(theme.autoCanopy, autoBodyFor(theme.landmark));
+        // Its seat stays empty while the driver waits beside it; when the
+        // ride starts they take the wheel (startRide).
+        seatDriver(cab, hashId(task.id), attireFor(task, theme.landmark, hashId(task.id)).cloth1).visible = false;
         const cx = taxi ? -2.8 : -2.2;
         cab.rotation.y = -Math.PI / 5;
         cab.position.set(cx, 0.02, 0.6);
@@ -684,6 +697,7 @@ export class Game {
     const t = this.clock.elapsedTime;
 
     this.world.update(dt, t, this.playerPos);
+    this.beacon.update(t);
 
     const ride = this.rides.update(dt, this.playerPos, this.tasks, this.done, this.hostMeshes);
     if (ride && "kind" in ride) {
@@ -1104,7 +1118,12 @@ export class Game {
     if (!task) return;
     if (task.kind === "auto") {
       const auto = this.taskAutos.get(taskId);
-      if (auto) this.rides.startAuto(task, auto, this.tasks, this.done);
+      if (!auto) throw new Error(`[game] ${taskId}: no auto to ride`);
+      if (!this.rides.startAuto(task, auto, this.tasks, this.done)) return;
+      // The driver leaves the kerb for the wheel.
+      (auto.userData.driver as THREE.Object3D).visible = true;
+      const host = this.hostMeshes.get(taskId);
+      if (host) host.visible = false;
     } else if (task.kind === "bus") {
       this.rides.startBus(task);
     }
@@ -1161,6 +1180,7 @@ export class Game {
 
   public dispose() {
     this.disposed = true;
+    this.beacon.dispose();
     cancelAnimationFrame(this.raf);
 
     window.removeEventListener("keydown", this.onKeyDown);

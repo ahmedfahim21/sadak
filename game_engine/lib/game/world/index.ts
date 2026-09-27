@@ -26,6 +26,7 @@ import { buildBeach } from "./beach";
 import { buildBusYards, STAND_LIVERIES } from "./busyard";
 import { buildBoards } from "./boards";
 import { createBoundary } from "./boundary";
+import { createEntrances } from "./beacons";
 import { buildPrecinct } from "./precinct";
 import { CITY_TRAFFIC } from "../transit";
 import { makeCityFlag } from "../assets";
@@ -158,6 +159,9 @@ export function buildWorld(map: MapData, district: District, deps: WorldDeps): W
 
   // The edge of the district, shown when you come near it.
   const boundary = createBoundary(map.half);
+  // Gold chevrons at each monument's way in, shown on the approach.
+  const entrances = createEntrances(map, (x, z) => height.at(x, z));
+  group.add(entrances.group);
   group.add(boundary.group);
 
   // Every district flies the tricolour, near where the player starts.
@@ -318,6 +322,7 @@ export function buildWorld(map: MapData, district: District, deps: WorldDeps): W
       areas.update(t);
       flocks.update(dt, t, focus);
       boundary.update(t, focus);
+      entrances.update(t, focus);
     },
     dispose() {
       buildings.dispose();
@@ -329,6 +334,7 @@ export function buildWorld(map: MapData, district: District, deps: WorldDeps): W
       beach.dispose();
       yards.dispose();
       boundary.dispose();
+      entrances.dispose();
       precinct?.dispose();
       posters?.dispose();
       boards?.dispose();

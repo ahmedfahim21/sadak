@@ -52,7 +52,8 @@ import {
 } from "@/lib/game/npc-memory";
 import { prefetchTtsUrls, revokeTtsPrefetchMap, type TtsPrefetchMap } from "@/lib/tts/prefetch-client";
 import { useDiscovery } from "@/components/map/useDiscovery";
-import { taskLook } from "@/components/map/mapKit";
+import { taskLook, type Waypoint } from "@/components/map/mapKit";
+import { useWaypointRoute } from "@/components/map/useWaypoint";
 
 /** Minimum time the enter screen stays up, so its controls are readable even
  *  when the district and progress fetches come back instantly. */
@@ -85,6 +86,13 @@ export default function GameShell() {
   // place by the engine and read by the minimap's own rAF, never diffed.
   const [live, setLive] = useState<LiveState | null>(null);
   const [mapOpen, setMapOpen] = useState(false);
+  /** A spot marked on the full map to head for; cleared on arrival. */
+  const [waypoint, setWaypoint] = useState<Waypoint | null>(null);
+  const clearWaypoint = useCallback(() => setWaypoint(null), []);
+  const route = useWaypointRoute(worldMap, live, waypoint, clearWaypoint);
+  useEffect(() => {
+    gameRef.current?.setWaypoint(waypoint);
+  }, [waypoint]);
   const mapOpenRef = useRef(false);
   const [talking, setTalking] = useState<StreetTask | null>(null);
   const [barberOpen, setBarberOpen] = useState(false);
@@ -207,6 +215,7 @@ export default function GameShell() {
         }
 
         setWorldMap(map);
+        setWaypoint(null);
         setDistrict(districtPayload.district);
         setTasks(districtPayload.tasks);
         setBarberTask(districtPayload.taskPack.barber);
@@ -603,6 +612,8 @@ export default function GameShell() {
         onSkipRide={() => gameRef.current?.skipRide()}
         onOpenMap={() => setMapOpen(true)}
         onPlace={claimPlace}
+        waypoint={waypoint}
+        route={route}
         district={district}
         baseLang={baseLang}
         tasks={tasks}
@@ -646,6 +657,9 @@ export default function GameShell() {
           titles={Object.fromEntries(tasks.map((t) => [t.id, t.title]))}
           icons={Object.fromEntries(tasks.map((t) => [t.id, taskLook(t, district.theme.landmark).icon]))}
           found={discovery?.found ?? null}
+          waypoint={waypoint}
+          route={route}
+          onWaypoint={setWaypoint}
           onClose={() => setMapOpen(false)}
         />
       )}

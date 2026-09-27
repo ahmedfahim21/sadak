@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import type { MapData } from "@/lib/game/world/mapData";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import type { MapData, Pt } from "@/lib/game/world/mapData";
 import type { LiveState, TaskSnapshot, Telemetry } from "@/lib/game/engine";
 import type { District } from "@/lib/game/districts";
 import type { BaseLangCode } from "@/lib/i18n/base-lang";
@@ -17,7 +17,8 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { cn } from "@/lib/utils";
-import { css, kindColour, renderStreetMap, taskLook } from "@/components/map/mapKit";
+import { css, entrances, kindColour, renderStreetMap, taskLook, type Waypoint } from "@/components/map/mapKit";
+import { drawBlip, drawDoor, drawPin, drawRoute, pinToEdge } from "@/components/map/blips";
 import { ErrandIcon } from "@/components/map/errandIcons";
 import type { Landmark } from "@/lib/game/assets";
 import { roadLabels, type RoadLabel } from "@/lib/game/world/mapLabels";
@@ -93,6 +94,8 @@ function Minimap({
   live,
   tasks,
   barber,
+  waypoint,
+  route,
   size,
   map,
   onOpen,
@@ -100,6 +103,9 @@ function Minimap({
   live: LiveState | null;
   tasks: TaskSnapshot[];
   barber?: { x: number; z: number };
+  waypoint: Waypoint | null;
+  /** The walk to the waypoint, along the streets. */
+  route: Pt[] | null;
   size: number;
   map: MapData;
   /** Open the full map. */
@@ -116,6 +122,12 @@ function Minimap({
   tasksRef.current = tasks;
   const barberRef = useRef(barber);
   barberRef.current = barber;
+  const waypointRef = useRef(waypoint);
+  waypointRef.current = waypoint;
+  const routeRef = useRef(route);
+  routeRef.current = route;
+  const doorsRef = useRef<Pt[]>([]);
+  doorsRef.current = useMemo(() => entrances(map), [map]);
   const liveRef = useRef(live);
   liveRef.current = live;
 
@@ -166,51 +178,9 @@ function Minimap({
         ctx.drawImage(sm.canvas, -h * scale, -h * scale, h * 2 * scale, h * 2 * scale);
       }
 
-      for (const t of tasksRef.current) {
-        const col = t.colour;
-        ctx.globalAlpha = t.done ? 0.45 : 1;
-        const dotR = 4.5 * ui;
-        const sx = t.x * scale;
-        const sy = t.z * scale;
-
-        // Soft shadow under blip (GTA-style minimap parity).
-        ctx.fillStyle = "rgba(0,0,0,0.35)";
-        ctx.beginPath();
-        ctx.arc(sx + 1.2 * ui, sy + 1.2 * ui, dotR + 1.5 * ui, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.fillStyle = col;
-        ctx.beginPath();
-        ctx.arc(sx, sy, dotR, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.strokeStyle = "rgba(255,255,255,0.45)";
-        ctx.lineWidth = Math.max(1, 1.5 * ui);
-        ctx.beginPath();
-        ctx.arc(sx, sy, dotR + 0.5 * ui, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.globalAlpha = 1;
-      }
-
-      const b = barberRef.current;
-      if (b) {
-        const dotR = 4 * ui;
-        const sx = b.x * scale;
-        const sy = b.z * scale;
-        ctx.fillStyle = "rgba(0,0,0,0.35)";
-        ctx.beginPath();
-        ctx.arc(sx + 1.2 * ui, sy + 1.2 * ui, dotR + 1.5 * ui, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = kindColour("barber", false);
-        ctx.beginPath();
-        ctx.arc(sx, sy, dotR, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = "rgba(255,255,255,0.45)";
-        ctx.lineWidth = Math.max(1, 1.5 * ui);
-        ctx.beginPath();
-        ctx.arc(sx, sy, dotR + 0.5 * ui, 0, Math.PI * 2);
-        ctx.stroke();
-      }
+      // The route to the waypoint, under everything else.
+      const route = routeRef.current;
+      if (route) drawRoute(ctx, route, (p) => [p[0] * scale, p[1] * scale], ui);
 
       ctx.restore();
 
@@ -242,6 +212,38 @@ function Minimap({
           used.push([sx, sy, w]);
           if (used.length >= 4) break;
         }
+      }
+
+      // Markers in screen space: entrances where they are (in range only),
+      // errands, the barber and the waypoint pinned to the rim when beyond it.
+      const th = l.heading + Math.PI;
+      const cs = Math.cos(th);
+      const sn = Math.sin(th);
+      const rel = (x: number, z: number): [number, number] => {
+        const dx = (x - l.x) * scale;
+        const dz = (z - l.z) * scale;
+        return [dx * cs - dz * sn, dx * sn + dz * cs];
+      };
+      // In from the edge by a pointer's length, so the pointer shows.
+      const rim = R - 11 * ui;
+      for (const [x, z] of doorsRef.current) {
+        const [ox, oy] = rel(x, z);
+        if (Math.max(Math.abs(ox), Math.abs(oy)) < rim) drawDoor(ctx, R + ox, R + oy, ui);
+      }
+      const b = barberRef.current;
+      if (b) {
+        const p = pinToEdge(...rel(b.x, b.z), rim);
+        drawBlip(ctx, R + p.x, R + p.y, kindColour("barber", false), { ui, pinned: p.pinned, angle: p.angle });
+      }
+      // Done errands first, so the ones still to do sit on top.
+      for (const t of [...tasksRef.current].sort((a, c) => Number(c.done) - Number(a.done))) {
+        const p = pinToEdge(...rel(t.x, t.z), rim);
+        drawBlip(ctx, R + p.x, R + p.y, t.colour, { ui, done: t.done, pinned: p.pinned, angle: p.angle });
+      }
+      const wp = waypointRef.current;
+      if (wp) {
+        const p = pinToEdge(...rel(wp.x, wp.z), rim);
+        drawPin(ctx, R + p.x, R + p.y, { ui, pinned: p.pinned, angle: p.angle });
       }
 
       ctx.fillStyle = "#5ab0ff";
@@ -279,6 +281,8 @@ export function MinimapPanel({
   live,
   tasks,
   barber,
+  waypoint,
+  route,
   size,
   map,
   onRecenter,
@@ -288,6 +292,8 @@ export function MinimapPanel({
   live: LiveState | null;
   tasks: TaskSnapshot[];
   barber?: { x: number; z: number };
+  waypoint: Waypoint | null;
+  route: Pt[] | null;
   size: number;
   map: MapData;
   onRecenter: () => void;
@@ -297,7 +303,7 @@ export function MinimapPanel({
 }) {
   return (
     <div className="relative block overflow-hidden rounded-base">
-      <Minimap live={live} tasks={tasks} barber={barber} size={size} map={map} onOpen={onOpenMap} />
+      <Minimap live={live} tasks={tasks} barber={barber} waypoint={waypoint} route={route} size={size} map={map} onOpen={onOpenMap} />
       {showKey && (
         <kbd className="pointer-events-none absolute top-1.5 left-1.5 text-[10px] leading-none opacity-90" aria-hidden>
           M
@@ -430,10 +436,15 @@ export default function Hud({
   onSkipRide,
   onOpenMap,
   onPlace,
+  waypoint,
+  route,
 }: {
   map: MapData;
   /** Open the full map (also on M). */
   onOpenMap: () => void;
+  /** Where the player marked on the full map, and the walk there. */
+  waypoint: Waypoint | null;
+  route: Pt[] | null;
   /** A place walked into: its find tally the first time, else null. */
   onPlace: (name: string) => { found: number; total: number } | null;
   /** Jump to the end of an auto or bus ride. */
@@ -534,6 +545,8 @@ export default function Hud({
                     live={live}
                     tasks={tel.tasks}
                     barber={tel.barber}
+                    waypoint={waypoint}
+                    route={route}
                     size={mapSize}
                     onRecenter={onRecenter}
                     onOpenMap={onOpenMap}
@@ -696,6 +709,8 @@ export default function Hud({
                     live={live}
                     tasks={tel.tasks}
                     barber={tel.barber}
+                    waypoint={waypoint}
+                    route={route}
                     size={mapSize}
                     onRecenter={onRecenter}
                     onOpenMap={onOpenMap}
