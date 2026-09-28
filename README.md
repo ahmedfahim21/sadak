@@ -6,7 +6,7 @@
 
 <p align="center">
   <b>Ten Indian cities. Talk your way through.</b><br/>
-  A voice-first 3D browser game where every NPC listens and replies in their own language.
+  An interactive, voice-first game where you learn new languages through everyday conversations.
 </p>
 
 <p align="center">
