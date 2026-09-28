@@ -21,7 +21,7 @@
 
 SADAK drops you into real Indian neighbourhoods, rebuilt from OpenStreetMap, with a list of everyday errands in each one: stop an auto, order at a food stall, buy an offering at the temple, catch a bus, and one errand that belongs to that city. You get them done by walking up to people and **speaking to them** in Hindi, Tamil, Kannada, Bengali, Telugu, Malayalam, Marathi, Gujarati, Punjabi or Odia.
 
-Each errand is a short spoken lesson. The character says a line, you see what to say back in script, romanisation and English, and every word you say is scored. The characters are live [Sarvam AI](https://www.sarvam.ai) voice agents, so you can also just talk to them. You leave each district knowing a few real sentences you didn't know before.
+Each errand is a short spoken lesson. The character says a line, you see what to say back in script, romanisation and English, and every word you say is scored. Every voice, in both directions, runs on [Sarvam AI](https://www.sarvam.ai). You leave each district knowing a few real sentences you didn't know before.
 
 ## Screenshots
 
@@ -51,49 +51,40 @@ Each errand is a short spoken lesson. The character says a line, you see what to
 
 ## Features
 
-- **Talk, don't click.** Open-mic conversations over LiveKit, with push-to-talk as a fallback.
+- **Talk, don't click.** Hold to speak, and the character answers out loud in their own language.
 - **10 districts, 10 languages.** Each with five everyday errands, its own characters and a phrasebook.
 - **Word-by-word feedback.** Each line you speak is matched against the phrase, word by word.
 - **Three difficulty levels.** Pick easy, medium or hard and the lessons change with it.
-- **Errands judged by the model, not keywords.** In free conversation, a separate call grades each turn against what the errand needs.
+- **Characters who remember you.** Come back to someone you've already met and they greet you with something you told them last time.
 - **Real maps.** Street networks, landmarks and transit from OpenStreetMap, cel-shaded in three.js.
 
 ## How it works
 
 ```
-mic → saaras:v4 (STT) → sarvam-105b (in-character reply) → bulbul:v3 (TTS) → audio + subtitles
-                                  ↘ errand grading (separate call) ↗
+scripted NPC line → bulbul:v3 (TTS) → you hear it, with script, romanisation and a gloss
+your reply → saaras:v4 (STT) → word-by-word score against the target phrase
+return visit → sarvam-105b writes a line that remembers your last conversation
 ```
 
-| Part | Path | Stack |
-| --- | --- | --- |
-| Game | [`game_engine/`](game_engine/README.md) | Next.js, three.js, Supabase (auth + progress) |
-| Voice worker | [`agent.py`](docs/VOICE_AGENT.md) | Python, LiveKit Agents, Sarvam STT / LLM / TTS |
+The game lives in [`game_engine/`](game_engine/README.md): Next.js, three.js, Sarvam (TTS, STT, LLM) and Supabase (auth and progress).
 
 ## Quick start
 
-**Prerequisites:** Node 18.18+, Python 3.10+, keys for [Sarvam AI](https://dashboard.sarvam.ai), [Supabase](https://supabase.com) and (for live voice) [LiveKit Cloud](https://cloud.livekit.io).
+**Prerequisites:** Node 18.18+, keys for [Sarvam AI](https://dashboard.sarvam.ai) and [Supabase](https://supabase.com).
 
 ```bash
-# 1. The game
 cd game_engine
 npm install
-cp .env.example .env        # Sarvam, Supabase, LiveKit keys
+cp .env.example .env        # Sarvam and Supabase keys
 npm run dev                 # http://localhost:3000
-
-# 2. The NPC voice worker (optional, repo root, second terminal)
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env        # same LiveKit project + Sarvam key
-python agent.py dev
 ```
 
-Without the worker, or without LiveKit keys, conversations fall back to push-to-talk on their own. Supabase setup (migrations, auth redirect URLs) is in the [game README](game_engine/README.md); the worker's modes, wire protocol and troubleshooting are in [docs/VOICE_AGENT.md](docs/VOICE_AGENT.md).
+Supabase setup (migrations, auth redirect URLs) is in the [game README](game_engine/README.md).
 
 ## Docs
 
 - [Game engine](game_engine/README.md): architecture, setup, design notes
-- [Voice agent](docs/VOICE_AGENT.md): `agent.py` setup, run modes, what the game sends it
+- [Voice agent](docs/VOICE_AGENT.md): the LiveKit worker in `agent.py` (not used by the game at the moment)
 - [Deploy](docs/DEPLOY.md): Vercel and Supabase production setup
 - [Handover](docs/HANDOVER.md): current state, latency measurements, logs
 
@@ -102,6 +93,5 @@ Without the worker, or without LiveKit keys, conversations fall back to push-to-
 Built by [ahmedfahim21](https://github.com/ahmedfahim21), [Parth Mittal](https://github.com/mittal-parth), [Apoorva Agrawal](https://github.com/imApoorva36) and [Mardav Gandhi](https://github.com/marcdhi).
 
 - Speech, language and voices by [Sarvam AI](https://www.sarvam.ai): Saaras (STT), sarvam-105b (LLM), Bulbul (TTS).
-- Real-time audio by [LiveKit](https://livekit.io).
 - Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, available under the Open Database License (ODbL 1.0).
 - The cel-shaded look is adapted from [sakura-crossing](https://github.com/Kenton-GMI/sakura-crossing) by Kenton Wang (MIT).
