@@ -79,6 +79,19 @@ function stretch(net: RoadNet, ri: number, s0: number, s1: number): Pt[] {
   return out;
 }
 
+const walkNets = new WeakMap<MapData, RoadNet>();
+/** Every street, lane, footway and stair, for walking. */
+function walkingNet(map: MapData): RoadNet {
+  let n = walkNets.get(map);
+  if (!n) walkNets.set(map, (n = new RoadNet(map, () => true)));
+  return n;
+}
+
+/** A walking route along the streets (the waypoint's line on the maps). */
+export function planWalk(map: MapData, fx: number, fz: number, tx: number, tz: number): Pt[] | null {
+  return planRoute(map, fx, fz, tx, tz, 0, 0, { walk: true, closest: true });
+}
+
 /**
  * A route from (fx, fz) to (tx, tz) for a vehicle needing `minWidth` of
  * carriageway, offset `lane` metres to the left of travel. Null if the two
@@ -92,9 +105,9 @@ export function planRoute(
   tz: number,
   minWidth: number,
   lane: number,
-  opts: { closest?: boolean } = {}
+  opts: { closest?: boolean; walk?: boolean } = {}
 ): Pt[] | null {
-  const net = new RoadNet(map, (r) => isDrivable(r) && r.w >= minWidth);
+  const net = opts.walk ? walkingNet(map) : new RoadNet(map, (r) => isDrivable(r) && r.w >= minWidth);
   const roads = net.included();
   const from = nearestOn(net, roads, fx, fz);
   if (!from) return null;
@@ -145,8 +158,8 @@ export function planRoute(
       for (const ri of net.at(id)) {
         const r = net.roads[ri].r;
         const other = r.a === id ? r.b : r.a;
-        // One-way streets only a -> b.
-        if (r.oneway && r.a !== id) continue;
+        // One-way streets only a -> b (on foot, either way).
+        if (r.oneway && r.a !== id && !opts.walk) continue;
         push(other, cost + net.roads[ri].len, id, ri);
       }
     }

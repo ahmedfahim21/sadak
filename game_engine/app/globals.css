@@ -113,13 +113,36 @@
   }
 
   kbd {
-    @apply inline-block min-w-[1.6em] rounded-base border-2 border-border bg-secondary-background px-1.5 py-0.5 text-xs font-base shadow-shadow;
+    /* Its own text colour: inherited, a key in a dark panel was white on its light chip. */
+    @apply inline-block min-w-[1.6em] rounded-base border-2 border-border bg-secondary-background px-1.5 py-0.5 text-xs font-base text-foreground shadow-shadow;
   }
 
   /* Key hint inside a brutal button: one shadow on the control, chip only inside */
   button kbd,
   [data-slot="button"] kbd {
     @apply inline-flex min-w-0 items-center justify-center rounded-base border border-border bg-main px-1.5 py-0.5 text-[0.65rem] leading-none text-main-foreground shadow-none;
+  }
+}
+
+/* A cover drifting slowly in, as if the camera were still moving. */
+@keyframes cover-drift {
+  from {
+    transform: scale(1.12) translate(1.5%, 1%);
+  }
+  to {
+    transform: scale(1) translate(0, 0);
+  }
+}
+
+/* A tile of the login wall taking its next picture. */
+@keyframes tile-in {
+  from {
+    opacity: 0;
+    transform: scale(1.06);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
   }
 }
 

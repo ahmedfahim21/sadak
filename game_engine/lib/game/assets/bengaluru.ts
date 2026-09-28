@@ -268,3 +268,109 @@ export function makeDeliveryBike(mats?: AssetMaterialLib, seed = 23): THREE.Grou
   g.name = "bengaluru-delivery-bike";
   return g;
 }
+
+/* ------------------------------------------------------------------ *
+ * Majestic's single-screen cinemas (Santosh, Sapna, Anupama, Triveni on
+ * Kempegowda Road): not Bombay Art Deco but 1970s concrete halls. A tall
+ * blank auditorium behind; in front a lobby block with a glazed, grilled
+ * ground floor and a ribbon of windows behind concrete fins; a name pylon
+ * standing proud at one corner, lit in bands; a thin cantilevered canopy
+ * over the forecourt on two columns; a ticket booth with its windows to
+ * one side; black water tanks on the roof. Front at +z. The film hoarding
+ * goes on the lobby roof (world/index.ts). ~22m wide, ~17m to the pylon.
+ * ------------------------------------------------------------------ */
+
+/** The hall's parts that stand on the ground, for its colliders (model frame). */
+export function singleScreenCinemaSolids(seed: number): [number, number, number, number][] {
+  const { side } = singleScreenLayout(seed);
+  const px = side * 9.4;
+  const bx = -side * 8.2;
+  return [
+    [-11, -14, 11, 2], // auditorium
+    [-11, 2, 11, 7], // lobby
+    [px - 1.2, 6.9, px + 1.2, 8.0], // pylon
+    [bx - 1.5, 8.2, bx + 1.5, 10.2], // ticket booth
+    ...[-1, 1].map((k): [number, number, number, number] => [side * -1 + k * 5.4 - 0.18, 10.42, side * -1 + k * 5.4 + 0.18, 10.78]), // canopy columns
+  ];
+}
+
+function singleScreenLayout(seed: number) {
+  const rand = mulberry32(seed);
+  const palettes = [
+    { wall: 0xefe4cc, band: 0x8e2b2b, fin: 0xf2c14e, pylon: 0xc0392b },
+    { wall: 0xf0cfc8, band: 0x1f6f6a, fin: 0xf6f1e7, pylon: 0x1f6f6a },
+    { wall: 0xcfe3cf, band: 0xb03a2e, fin: 0xf6f1e7, pylon: 0xe0a526 },
+    { wall: 0xc9dcec, band: 0x24406e, fin: 0xf6f1e7, pylon: 0xe06c2a },
+  ];
+  return { rand, palette: palettes[seed % palettes.length], side: seed % 2 ? 1 : -1 };
+}
+
+/** `seed` 0, 1, 2, ...: each of a district's cinemas in its own colours, the pylon on alternate corners. */
+export function makeSingleScreenCinema(mats?: AssetMaterialLib, seed = 0): THREE.Group {
+  const { rand, palette, side } = singleScreenLayout(seed);
+  const wall = stdMat(palette.wall, { roughness: 0.9 }, mats);
+  const band = stdMat(palette.band, { roughness: 0.8 }, mats);
+  const fin = stdMat(palette.fin, { roughness: 0.85 }, mats);
+  const concrete = stdMat(0xb9b4aa, { roughness: 0.95 }, mats);
+  const glass = stdMat(0x24343f, { roughness: 0.2, metalness: 0.3 }, mats);
+  const grille = stdMat(0x3a3d42, { roughness: 0.6, metalness: 0.5 }, mats);
+  const pylon = stdMat(palette.pylon, { roughness: 0.7 }, mats);
+  const lit = stdMat(0xfff2c2, { emissive: 0xffd36b, emissiveIntensity: 0.9, roughness: 0.4 }, mats);
+  const tank = stdMat(0x1d1f22, { roughness: 0.6 }, mats);
+  const P: Part[] = [];
+  const add = (geo: THREE.BufferGeometry, mat: THREE.Material) => P.push({ geo, mat });
+
+  // Auditorium: a tall blank box, pilasters down its long sides, exit doors
+  // under little hoods, a band at the parapet.
+  add(bakedBox(22, 12.5, 16, 0, 6.25, -6), wall);
+  add(bakedBox(22.3, 0.7, 16.3, 0, 12.2, -6), band);
+  for (const sx of [-1, 1]) {
+    for (let z = -13; z <= 1; z += 3.5) add(bakedBox(0.4, 12, 0.7, sx * 11.1, 6, z), fin);
+    for (const z of [-10, -3]) {
+      add(bakedBox(0.1, 2.4, 1.6, sx * 11.05, 1.2, z), grille);
+      add(bakedBox(0.9, 0.12, 2.2, sx * 11.4, 2.7, z), concrete);
+    }
+  }
+  // The lobby block in front: glazed ground floor behind a collapsible
+  // grille, a ribbon of windows above between concrete fins, a band on top.
+  add(bakedBox(22, 8.5, 5, 0, 4.25, 4.5), wall);
+  add(bakedBox(22.3, 0.6, 5.3, 0, 8.3, 4.5), band);
+  add(bakedBox(15, 3.1, 0.1, -side, 1.65, 7.02), glass);
+  for (let x = -7.4; x <= 7.4; x += 0.35) add(bakedBox(0.04, 3.0, 0.05, -side + x, 1.65, 7.1), grille);
+  add(bakedBox(19, 2.2, 0.1, 0, 5.8, 7.02), glass);
+  for (let x = -9.4; x <= 9.4; x += 0.95) add(bakedBox(0.14, 2.6, 0.8, x, 5.8, 7.25), fin);
+  add(bakedBox(19.6, 0.25, 0.9, 0, 4.55, 7.3), fin);
+  add(bakedBox(19.6, 0.25, 0.9, 0, 7.05, 7.3), fin);
+
+  // The name pylon: proud of the front at one corner, taller than all of
+  // it, lit in stacked bands (where the name's letters run down it).
+  const px = side * 9.4;
+  add(bakedBox(2.2, 17, 1.0, px, 8.5, 7.45), pylon);
+  for (let i = 0; i < 6; i++) add(bakedBox(1.5, 1.4, 0.12, px, 9.6 + i * 1.7, 8.0), lit);
+  add(bakedBox(2.6, 0.4, 1.4, px, 17.2, 7.45), band);
+
+  // The canopy over the forecourt: a thin slab cantilevered off the lobby,
+  // on two slender columns, lit on its edge.
+  const cx = -side * 1;
+  add(bakedBox(13, 0.35, 4.2, cx, 4.3, 9.1), concrete);
+  add(bakedBox(13, 0.3, 0.12, cx, 4.3, 11.25), lit);
+  for (const k of [-1, 1]) add(bakedCyl(0.16, 0.18, 4.2, 10, cx + k * 5.4, 2.1, 10.6), concrete);
+
+  // Ticket booth to one side of the forecourt: three windows with their
+  // grilles and a little sloping roof.
+  const bx = -side * 8.2;
+  add(bakedBox(3, 2.6, 2, bx, 1.3, 9.2), wall);
+  for (const k of [-1, 0, 1]) {
+    add(bakedBox(0.6, 0.5, 0.06, bx + k * 0.9, 1.4, 10.22), glass);
+    add(bakedBox(0.6, 0.06, 0.25, bx + k * 0.9, 1.1, 10.3), concrete);
+  }
+  add(bakedBox(3.5, 0.18, 2.6, bx, 2.75, 9.35, 0.12), band);
+
+  // On the roof: the projection room over the lobby's back and the water tanks.
+  add(bakedBox(6, 2.4, 3, side * 3, 9.7, 2.6), wall);
+  for (let i = 0; i < 3; i++) add(bakedCyl(0.65, 0.65, 1.3, 12, -side * (2 + i * 1.7) + (rand() - 0.5) * 0.3, 13.2, -9 + rand() * 2), tank);
+
+  const g = mergeByMaterial(P);
+  g.name = "bengaluru-single-screen";
+  return g;
+}

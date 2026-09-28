@@ -709,6 +709,148 @@ test("you can walk under Charminar's arches and into a cinema's forecourt, not t
   assert.equal(cw.blocked(...at(cinema, 0, 0), 0.1), true, "the hall is not solid");
 });
 
+test("a cinema's hall, a fishing net's posts and the seafront square's furniture are drawn where they collide (no walls of air)", () => {
+  for (const [id, model, city] of [["majestic-cross", "cinema", "bengaluru"], ["dadar-chowk", "cinema", "mumbai"], ["fort-kochi", "fishing_nets", "kochi"], ["fort-kochi", "promenade", "kochi"], ["marina-nagar", "statue", "chennai"]] as const) {
+    const map = loadMap(id);
+    for (const l of map.landmarks.filter((l) => l.model === model)) {
+      const cw = new CollisionWorld();
+      const { group } = placeLandmarks([l], city, cw, new HeightField(map.half));
+      group.updateMatrixWorld(true);
+      const meshes: THREE.Object3D[] = [];
+      group.traverse((o) => { if ((o as THREE.Mesh).isMesh) meshes.push(o); });
+      const ray = new THREE.Raycaster();
+      for (const c of cw.all) {
+        if (c.kind !== "box") continue;
+        const cs = Math.cos(c.rot);
+        const sn = Math.sin(c.rot);
+        // From 3m outside each side's middle, straight in: something drawn by the edge (or out past it).
+        for (const [u, v, half] of [[1, 0, c.hw], [-1, 0, c.hw], [0, 1, c.hd], [0, -1, c.hd]]) {
+          const ox = c.x + (u * cs + v * sn) * (half + 3);
+          const oz = c.z + (-u * sn + v * cs) * (half + 3);
+          // Only from where the player can stand (an edge inside another collider,
+          // like the curve's steps against the hall, can't be walked up to).
+          if (cw.blocked(ox, oz, 0.55)) continue;
+          const seen = [0.35, 1.3].some((y) => {
+            ray.set(new THREE.Vector3(ox, y, oz), new THREE.Vector3(-(u * cs + v * sn), 0, u * sn - v * cs));
+            ray.far = 3.3;
+            return ray.intersectObjects(meshes, false).length > 0;
+          });
+          assert.ok(seen, `${l.name}: nothing drawn at the ${u ? (u > 0 ? "+u" : "-u") : v > 0 ? "+v" : "-v"} edge of a ${(c.hw * 2).toFixed(1)}x${(c.hd * 2).toFixed(1)} collider`);
+        }
+      }
+    }
+  }
+});
+
+test("a deul's stepped-in corners are open, and a plinth low enough to step onto has no fence round it", async () => {
+  const { deul } = await import("./world/odisha");
+  const { temple } = await import("./world/monuments");
+  const inside = (cs: { x: number; z: number; hw: number; hd: number }[], x: number, z: number) =>
+    cs.some((c) => Math.abs(x - c.x) < c.hw && Math.abs(z - c.z) < c.hd);
+  // The tower's colliders: its middle solid, its corners (drawn stepped in) open.
+  const m = deul(20, 30);
+  const tower = m.colliders.reduce((a, c) => (c.hw * c.hd > a.hw * a.hd ? c : a));
+  const [cx, cz, b] = [tower.x, tower.z, Math.max(...m.colliders.filter((c) => c.z === tower.z).map((c) => c.hw)) * 2];
+  assert.ok(inside(m.colliders, cx, cz), "the tower is not solid");
+  assert.ok(inside(m.colliders, cx + b * 0.49, cz), "the tower's rib is not solid");
+  assert.ok(!inside(m.colliders, cx + b * 0.47, cz + b * 0.47), "a corner of the tower is a wall of air");
+  // A 0.6m plinth: only the temple's own parts collide, nothing along the plinth's front edge.
+  const style = { stone: 0xf2e8d5, accent: 0xd9642b, kind: "nagara", tower: 1.2 } as const;
+  const low = temple(8, 10, { ...style, plinth: 0.6 });
+  const high = temple(8, 10, { ...style, plinth: 1.1 });
+  // The edge walls: 0.5m deep strips (the mandapa's pillars are 0.5m square).
+  const frontEdge = (cs: typeof low.colliders) => cs.filter((c) => c.hd === 0.25 && c.hw !== 0.25 && c.z > 2).length;
+  assert.equal(frontEdge(low.colliders), 0, "a steppable plinth is fenced");
+  assert.ok(frontEdge(high.colliders) > 0, "a tall plinth can be walked up anywhere");
+});
+
+test("Bengaluru's cinemas are its own single screens, no two alike; Mumbai's stays Art Deco", () => {
+  const colours = (id: string, city: Landmark) => {
+    const map = loadMap(id);
+    const { group } = placeLandmarks(map.landmarks.filter((l) => l.model === "cinema"), city, new CollisionWorld(), new HeightField(map.half));
+    return group.children.map((g) => {
+      let name = "";
+      const cols: string[] = [];
+      g.traverse((o) => {
+        if (/single-screen|art-deco/.test(o.name)) name = o.name;
+        const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
+        if ((o as THREE.Mesh).isMesh && m?.color) cols.push(m.color.getHexString());
+      });
+      return { name, look: cols.sort().join(",") };
+    });
+  };
+  const blr = colours("majestic-cross", "bengaluru");
+  assert.equal(blr.length, 4);
+  for (const c of blr) assert.equal(c.name, "bengaluru-single-screen");
+  assert.equal(new Set(blr.map((c) => c.look)).size, 4, "two of Majestic's cinemas look the same");
+  for (const c of colours("dadar-chowk", "mumbai")) assert.equal(c.name, "mumbai-art-deco-cinema");
+});
+
+test("Vasco da Gama Square is furnished: a railing to the sea, a tree, benches, seafood stalls, a coconut cart, lamps", async () => {
+  const { promenade } = await import("./world/monuments");
+  const m = promenade(10, 10);
+  const size = (c: { hw: number; hd: number }) => `${(c.hw * 2).toFixed(1)}x${(c.hd * 2).toFixed(1)}`;
+  const kinds = m.colliders.map(size);
+  assert.ok(kinds.includes("10.0x0.6"), "no parapet along the sea");
+  assert.ok(kinds.includes("2.6x2.6"), "no tree planter");
+  assert.ok(kinds.filter((k) => k === "2.2x1.1").length >= 2, "fewer than two seafood stalls");
+  assert.ok(kinds.filter((k) => k === "1.7x0.5").length >= 1, "no bench");
+  assert.ok(kinds.includes("1.5x1.1"), "no coconut cart");
+  assert.ok(kinds.filter((k) => k === "0.3x0.3").length >= 2, "fewer than two lamps");
+  // Room to walk through it: the middle of the square is open.
+  assert.ok(!m.colliders.some((c) => Math.abs(1 - c.x) < c.hw && Math.abs(1.5 - c.z) < c.hd), "the square's middle is blocked");
+});
+
+test("each city's small temples are its own: Gujarati marble or sandstone, a wayside shrine, the North Indian shikhara", () => {
+  const form = (id: string, name: string) => {
+    const map = loadMap(id);
+    const l = map.landmarks.find((l) => l.name === name)!;
+    const d = SEED_DISTRICTS.find((x) => x.id === id)!;
+    return buildLandmark(l, d.theme.landmark).group.name;
+  };
+  assert.equal(form("dadar-chowk", "Swami Narayan Mandir"), "gurjara-temple");
+  assert.equal(form("manek-chowk", "Maneknath Mandir"), "gurjara-temple");
+  assert.equal(form("dadar-chowk", "Hanuman temple"), "wayside-shrine");
+  assert.equal(form("charminar-lane", "Bhagyalaxmi Temple"), "wayside-shrine");
+  assert.equal(form("purani-sadak", "Gauri Shankar Hindu Temple"), "");
+});
+
+test("Kolkata's colonial buildings each have their own face: turrets, a colonnade, a portico", () => {
+  const map = loadMap("park-gully");
+  const build = (name: string) => buildLandmark(map.landmarks.find((l) => l.name === name)!, "kolkata");
+  const size = (c: { hw: number; hd: number }) => Math.max(c.hw, c.hd);
+  // Queens Mansions: four turret colliders at the corners; no portico columns.
+  const queens = build("Queens Mansions").colliders;
+  assert.equal(queens.filter((c) => c.hw === c.hd && size(c) > 1.5 && size(c) < 2.5).length, 4, "no corner turrets");
+  // Chowringhee Mansions: a row of colonnade columns along the front.
+  const chowringhee = build("Chowringhee Mansions").colliders;
+  assert.ok(chowringhee.filter((c) => c.hw === 0.3 && c.hd === 0.3).length >= 5, "no colonnade");
+  // The Asiatic Society: its portico's six columns, and nothing else small.
+  const asiatic = build("Old Building of the Asiatic Society").colliders;
+  assert.equal(asiatic.filter((c) => c.hw === 0.35).length, 6, "no portico");
+  // All three different in outline.
+  const shape = (cs: typeof queens) => cs.map((c) => `${c.hw.toFixed(1)}x${c.hd.toFixed(1)}`).sort().join();
+  assert.equal(new Set([shape(queens), shape(chowringhee), shape(asiatic)]).size, 3);
+});
+
+test("the Marina's statues are three different figures, each over life size on its own pedestal", async () => {
+  const { statue } = await import("./world/monuments");
+  const shape = (pose: "anklet" | "scholar" | "leader") => {
+    const g = statue(4, 4, pose).group;
+    g.updateMatrixWorld(true);
+    const b = new THREE.Box3().setFromObject(g);
+    let verts = 0;
+    g.traverse((o) => { if ((o as THREE.Mesh).isMesh) verts += (o as THREE.Mesh).geometry.attributes.position.count; });
+    return { top: b.max.y, verts };
+  };
+  const [k, t, b] = [shape("anklet"), shape("scholar"), shape("leader")];
+  assert.equal(new Set([k.verts, t.verts, b.verts]).size, 3, "two statues are the same model");
+  // Figures well above the pedestal (a standing figure is some 2m, over life size).
+  assert.ok(k.top > 7.3, `Kannagi's anklet at ${k.top.toFixed(1)}m`);
+  assert.ok(b.top > 6.8, `Bose at ${b.top.toFixed(1)}m`);
+  assert.ok(t.top > 5 && t.top < b.top, `Thiruvalluvar, seated, at ${t.top.toFixed(1)}m`);
+});
+
 /** The map's static collision, as buildWorld registers it. */
 function mapCollision(map: MapData, landmark: Landmark) {
   const world = new CollisionWorld();
@@ -855,4 +997,111 @@ test("a gateway mapped on its road stands across it, the road through its arches
     const along = Math.abs(Math.sin(gate.rot) * best.dir[0] + Math.cos(gate.rot) * best.dir[1]);
     assert.ok(along > 0.95, `${name}'s arches open ${Math.round((Math.acos(along) * 180) / Math.PI)}° off its road`);
   }
+});
+
+test("crowd walkers never jump or dash: they turn corners on their own side at a walk, and come back in only out of sight", async () => {
+  const { SPAWN_MIN } = await import("./crowd");
+  const map = loadMap("purani-sadak");
+  const crowd = createCrowd({ landmark: "delhi", map, groundAt: () => 0.2, blocked: () => false, gatherings: [], walkers: 60 });
+  const torso = crowd.group.children[2] as THREE.InstancedMesh;
+  const focus = new THREE.Vector3(150, 0, -318);
+  crowd.prime(focus);
+  const m = new THREE.Matrix4();
+  const at = (i: number) => new THREE.Vector3().setFromMatrixPosition((torso.getMatrixAt(i, m), m));
+  let last = Array.from({ length: crowd.count }, (_, i) => at(i));
+  const dt = 1 / 30;
+  for (let f = 0; f < 30 * 60; f++) {
+    // The player walks west down Chandni Chowk, leaving people behind.
+    focus.x -= 3 * dt;
+    crowd.update(dt, focus);
+    const now = Array.from({ length: crowd.count }, (_, i) => at(i));
+    now.forEach((p, i) => {
+      const jump = Math.hypot(p.x - last[i].x, p.z - last[i].z);
+      const d = Math.hypot(p.x - focus.x, p.z - focus.z);
+      // In sight, never faster than a brisk walk (a corner or a dead end was
+      // a dash to the new footpath line, tens of metres a second).
+      if (d < SPAWN_MIN - 6) assert.ok(jump <= 2.4 * dt, `frame ${f}: person ${i} moved at ${(jump / dt).toFixed(1)} m/s, ${d.toFixed(0)}m from the player`);
+      if (jump < 0.6) return;
+      // Anything bigger is a recycle, and lands out of sight (the spawn
+      // distance is checked on the street's line; the footpath is a few
+      // metres to one side of it).
+      assert.ok(d >= SPAWN_MIN - 6, `frame ${f}: person ${i} jumped ${jump.toFixed(1)}m to ${d.toFixed(0)}m from the player`);
+    });
+    last = now;
+  }
+});
+
+test("with detail streamed in round the player, every plot near them is still drawn (no colliders on nothing)", async () => {
+  const { buildWorld } = await import("./world");
+  const map = loadMap("purani-sadak");
+  const d = SEED_DISTRICTS.find((x) => x.id === "purani-sadak")!;
+  const world = buildWorld(map, d, { vehicleMats: createVehicleMaterials(), transitMat: createTransitMaterial(), toon: (m) => m });
+  const focus = new THREE.Vector3(150, 0, -127);
+  world.prime(focus);
+  world.group.updateMatrixWorld(true);
+  const solids: THREE.Object3D[] = [];
+  world.group.traverse((o) => {
+    let visible = true;
+    for (let q: THREE.Object3D | null = o; q; q = q.parent) visible &&= q.visible;
+    if ((o as THREE.Mesh).isMesh && visible) solids.push(o);
+  });
+  const ray = new THREE.Raycaster();
+  const near = map.plots.filter((p) => Math.hypot(p.x - focus.x, p.z - focus.z) < 90);
+  assert.ok(near.length > 50, `${near.length} plots`);
+  const bare = near.filter((p) => {
+    ray.set(new THREE.Vector3(p.x, 80, p.z), new THREE.Vector3(0, -1, 0));
+    return !ray.intersectObjects(solids, false).some((h) => h.point.y > 2);
+  });
+  assert.deepEqual(bare.map((p) => `${p.x.toFixed(0)},${p.z.toFixed(0)}${p.front ? " front" : ""}`), []);
+});
+
+test("traffic stops for a cow in the road (and leans on the horn)", () => {
+  const map = loadMap("dadar-chowk");
+  const traffic = createTraffic(map, { landmark: "mumbai", autoCanopy: 0xf1c40f, autos: 6, cars: 6, vehicleMats: createVehicleMaterials(), transitMat: createTransitMaterial() });
+  const start = new THREE.Vector3(map.spawn.x, 0, map.spawn.z);
+  traffic.prime(start);
+  const v = traffic.vehicles.find((x) => polylineLength(map.roads[x.road].pts) - x.p > 30)!;
+  assert.ok(v, "no vehicle with a clear run ahead");
+  const cow = { x: v.mesh.position.x + Math.sin(v.yaw) * (v.halfLength + 7), z: v.mesh.position.z + Math.cos(v.yaw) * (v.halfLength + 7), r: 1.1 };
+  // The player is well out of the way; only the cow is in the road.
+  const away = new THREE.Vector3(cow.x + 60, 0, cow.z + 60);
+  let closest = Infinity;
+  let held = false;
+  for (let i = 0; i < 200; i++) {
+    traffic.update(0.05, i * 0.05, away, [cow]);
+    held ||= Boolean(v.heldUp);
+    const c = Math.cos(v.yaw);
+    const sn = Math.sin(v.yaw);
+    const dx = cow.x - v.mesh.position.x;
+    const dz = cow.z - v.mesh.position.z;
+    if (Math.abs(dx * c - dz * sn) < v.halfWidth + 1) closest = Math.min(closest, dx * sn + dz * c - v.halfLength);
+  }
+  assert.ok(closest < 5, `never came up to the cow (gap ${closest.toFixed(2)}m)`);
+  assert.ok(closest > 1.1, `drove into the cow (gap ${closest.toFixed(2)}m)`);
+  assert.ok(held, "stopped without being held up");
+});
+
+test("a few cows and dogs per city, walking the streets; cows are solid, dogs step aside", async () => {
+  const { createAnimals, ANIMALS } = await import("./world/animals");
+  for (const d of SEED_DISTRICTS) {
+    const spec = ANIMALS[d.theme.landmark];
+    assert.ok(spec.cows + spec.dogs <= 9, `${d.id}: that's a herd`);
+    assert.ok(spec.dogs >= 3, `${d.id}: every street has its dogs`);
+  }
+  const map = loadMap("purani-sadak");
+  const animals = createAnimals(map, "delhi", () => 0.2);
+  assert.equal(animals.count, ANIMALS.delhi.cows + ANIMALS.delhi.dogs);
+  const focus = new THREE.Vector3(map.spawn.x, 0, map.spawn.z);
+  animals.prime(focus);
+  const start = animals.group.children.map((c) => c.position.clone());
+  for (let i = 0; i < 30 * 40; i++) animals.update(1 / 30, focus);
+  const moved = animals.group.children.filter((c, i) => c.position.distanceTo(start[i]) > 1).length;
+  assert.ok(moved >= 2, `only ${moved} animals moved in 40s`);
+  // Every animal near the player (they live round them).
+  for (const c of animals.group.children) assert.ok(Math.hypot(c.position.x - focus.x, c.position.z - focus.z) < 160);
+  // Cows block; nothing blocks where there are none.
+  const cows = animals.group.children.slice(0, ANIMALS.delhi.cows);
+  assert.ok(cows.every((c) => animals.hit(c.position.x, c.position.z, 0.55)), "walked through a cow");
+  const dogs = animals.group.children.slice(ANIMALS.delhi.cows);
+  assert.ok(dogs.every((c) => !animals.hit(c.position.x, c.position.z, 0.1) || cows.some((w) => w.position.distanceTo(c.position) < 2)), "a dog blocks");
 });

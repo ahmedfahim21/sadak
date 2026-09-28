@@ -93,6 +93,8 @@ export function makeAmbassadorTaxi(mats?: AssetMaterialLib, seed = 30): THREE.Gr
   const g = new THREE.Group();
   g.add(mergeByMaterial(bodyParts), mergeByMaterial(trimParts), mergeByMaterial(wheelParts), mergeByMaterial(glassParts));
   g.name = "kolkata-ambassador-taxi";
+  // Right-hand drive, front bench.
+  g.userData.driverSeat = { seatY: 0.5, z: 0.28, x: -0.36 };
   return g;
 }
 
@@ -343,5 +345,7 @@ export function makeHandRickshaw(mats?: AssetMaterialLib, seed = 34): THREE.Grou
   const g = new THREE.Group();
   g.add(mergeByMaterial(bodyParts), mergeByMaterial(wheelParts), mergeByMaterial(canopyParts));
   g.name = "kolkata-hand-rickshaw";
+  // The puller stands between the shafts, at the crossbar.
+  g.userData.driverSeat = { seatY: 0, z: 2.2, standing: true };
   return g;
 }

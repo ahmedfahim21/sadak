@@ -241,6 +241,7 @@ export function makeCycleRickshaw(mats?: AssetMaterialLib, seed = 3): THREE.Grou
     mergeByMaterial(seatParts)
   );
   g.name = "delhi-cycle-rickshaw";
+  g.userData.driverSeat = { seatY: 0.78, z: 1.15 };
   return g;
 }
 

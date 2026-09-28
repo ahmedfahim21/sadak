@@ -16,7 +16,7 @@ import * as THREE from "three";
 import type { Landmark } from "../assets";
 import { autoBodyFor, makeAuto, mulberry32 } from "../props";
 import { makeCar, TRAFFIC_KINDS, type CarKind, type VehicleMaterials } from "../vehicles";
-import { CITY_TRAFFIC, makeBus, makeTwoWheeler } from "../transit";
+import { CITY_TRAFFIC, makeBus, makeTwoWheeler, seatDriver } from "../transit";
 import { makeCycleRickshaw, makeHandRickshaw, makeAmbassadorTaxi } from "../assets";
 import type { MapData, MapRoad } from "./mapData";
 import { isDrivable } from "./roads";
@@ -39,6 +39,8 @@ export type TrafficVehicle = {
   cruise: number;
   halfLength: number;
   halfWidth: number;
+  /** Stopped for someone in the road this frame (and likely on the horn). */
+  heldUp?: boolean;
   /** Offset to the left of the centreline, metres. */
   lane: number;
   yaw: number;
@@ -53,7 +55,8 @@ export type Traffic = {
   vehicles: TrafficVehicle[];
   /** Scatter the whole fleet round `focus`, close in included. */
   prime(focus: THREE.Vector3): void;
-  update(dt: number, t: number, focus: THREE.Vector3): void;
+  /** `obstacles`: others standing in the road (a cow), stopped for like the player. */
+  update(dt: number, t: number, focus: THREE.Vector3, obstacles?: { x: number; z: number; r: number }[]): void;
   /** Does a circle at (x, z) overlap any vehicle? */
   hit(x: number, z: number, r: number): TrafficVehicle | null;
   dispose(): void;
@@ -109,6 +112,13 @@ export function createTraffic(map: MapData, opts: TrafficOpts): Traffic {
   };
 
   const makeMesh = (kind: Kind, seed: number): THREE.Group => {
+    const mesh = vehicleMesh(kind, seed);
+    // Everything on four or three wheels has someone driving it (buses and
+    // two-wheelers build their own).
+    if (mesh.userData.driverSeat) seatDriver(mesh, seed + 11);
+    return mesh;
+  };
+  const vehicleMesh = (kind: Kind, seed: number): THREE.Group => {
     switch (kind) {
       case "bike":
         return makeTwoWheeler(opts.transitMat, seed);
@@ -256,7 +266,7 @@ export function createTraffic(map: MapData, opts: TrafficOpts): Traffic {
         throw new Error(`[traffic] no street for a ${v.kind}`);
       }
     },
-    update(dt, t, focus) {
+    update(dt, t, focus, obstacles = []) {
       byLane.clear();
       for (const v of vehicles) {
         const k = laneKey(v);
@@ -288,18 +298,25 @@ export function createTraffic(map: MapData, opts: TrafficOpts): Traffic {
           if (gap < 1) target = 0;
         }
 
-        // Someone standing in the lane ahead (the player): slow, then stop
-        // short of them, the way traffic here noses up and leans on the horn.
+        // Someone standing in the lane ahead (the player, or a cow): slow,
+        // then stop short of them, the way traffic here noses up and leans
+        // on the horn.
+        v.heldUp = false;
         {
           const c = Math.cos(v.yaw);
           const sn = Math.sin(v.yaw);
-          const dx = focus.x - v.mesh.position.x;
-          const dz = focus.z - v.mesh.position.z;
-          const across = dx * c - dz * sn;
-          const ahead = dx * sn + dz * c - v.halfLength;
-          if (Math.abs(across) < v.halfWidth + 0.9 && ahead > -0.5) {
-            const room = ahead - 1.5;
-            if (room < 2 + v.speed * 1.2) target = Math.min(target, Math.max(0, room) * 0.8);
+          for (const o of [{ x: focus.x, z: focus.z, r: 0.9 }, ...obstacles]) {
+            const dx = o.x - v.mesh.position.x;
+            const dz = o.z - v.mesh.position.z;
+            const across = dx * c - dz * sn;
+            const ahead = dx * sn + dz * c - v.halfLength;
+            if (Math.abs(across) < v.halfWidth + o.r && ahead > -0.5) {
+              const room = ahead - 0.6 - o.r;
+              if (room < 2 + v.speed * 1.2) {
+                target = Math.min(target, Math.max(0, room) * 0.8);
+                if (room < 4) v.heldUp = true;
+              }
+            }
           }
         }
 

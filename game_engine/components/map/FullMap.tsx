@@ -8,15 +8,16 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Crosshair, Maximize2, Minus, Plus, X } from "lucide-react";
+import { Crosshair, Maximize2, Minus, Navigation2, Plus, X } from "lucide-react";
 import type { LiveState, TaskSnapshot } from "@/lib/game/engine";
 import type { District } from "@/lib/game/districts";
-import type { MapData } from "@/lib/game/world/mapData";
+import type { MapData, Pt } from "@/lib/game/world/mapData";
 import { placeLabels, roadLabels } from "@/lib/game/world/mapLabels";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { drawMapBase, kindColour, kindLabel, MAP_STYLE, type ErrandIconId } from "./mapKit";
-import { ErrandIcon } from "./errandIcons";
+import { drawMapBase, entrances, kindColour, kindLabel, MAP_STYLE, type ErrandIconId, type Waypoint } from "./mapKit";
+import { drawDoor, drawPin, drawRoute } from "./blips";
+import { ErrandBadge, ErrandIcon } from "./errandIcons";
 
 /** Pixels per metre, limits. */
 const MAX_SCALE = 9;
@@ -33,8 +34,15 @@ export function FullMap({
   titles,
   icons,
   found,
+  waypoint,
+  route,
+  onWaypoint,
   onClose,
 }: {
+  /** The spot marked to head for, the walk there, and setting or clearing it. */
+  waypoint: Waypoint | null;
+  route: Pt[] | null;
+  onWaypoint: (w: Waypoint | null) => void;
   /** Places found so far; the rest are marked but not named. */
   found: ReadonlySet<string> | null;
   map: MapData;
@@ -52,6 +60,7 @@ export function FullMap({
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const roads = useMemo(() => roadLabels(map), [map]);
   const places = useMemo(() => placeLabels(map), [map]);
+  const doors = useMemo(() => entrances(map), [map]);
   const [size, setSize] = useState({ w: 0, h: 0 });
   // Opens centred on the player, about 300m across.
   const [view, setView] = useState<View | null>(null);
@@ -229,6 +238,10 @@ export function FullMap({
       if (img) ctx.drawImage(img, px - 7.5, py - 7.5, 15, 15);
       ctx.globalAlpha = 1;
     };
+    // The walk to the waypoint, the ways into monuments, the pin.
+    if (route) drawRoute(ctx, route, (p) => [X(p[0]), Z(p[1])], 1.4);
+    if (scale > 0.9) for (const [x, z] of doors) drawDoor(ctx, X(x), Z(z), 1.6);
+    if (waypoint) drawPin(ctx, X(waypoint.x), Z(waypoint.z), { ui: 1.7 });
     for (const t of tasks) blip(t.x, t.z, t.colour, t.done ? "done" : icons[t.id], hover?.id === t.id, t.done);
     if (barber) blip(barber.x, barber.z, kindColour("barber", false), "barber", false);
 
@@ -256,11 +269,13 @@ export function FullMap({
       ctx.stroke();
       ctx.restore();
     }
-  }, [view, size, map, roads, places, tasks, barber, live, hover, found, icons, sprites]);
+  }, [view, size, map, roads, places, tasks, barber, live, hover, found, icons, sprites, route, waypoint, doors]);
 
   /* ---- panning and zooming ---- */
 
-  const drag = useRef<{ id: number; x: number; y: number }[]>([]);
+  const drag = useRef<{ id: number; x: number; y: number; x0: number; y0: number; t0: number }[]>([]);
+  // A tap (not a drag, not half of a double-click's zoom) sets or clears the waypoint.
+  const tapTimer = useRef<number | null>(null);
   const pinch = useRef<number | null>(null);
 
   const zoomAt = useCallback(
@@ -284,7 +299,7 @@ export function FullMap({
 
   const onPointerDown = (e: React.PointerEvent) => {
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    drag.current.push({ id: e.pointerId, x: e.clientX, y: e.clientY });
+    drag.current.push({ id: e.pointerId, x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, t0: performance.now() });
     if (drag.current.length === 2) {
       const [a, b] = drag.current;
       pinch.current = Math.hypot(a.x - b.x, a.y - b.y);
@@ -320,8 +335,29 @@ export function FullMap({
   };
 
   const onPointerUp = (e: React.PointerEvent) => {
+    const p = drag.current.find((d) => d.id === e.pointerId);
+    const alone = drag.current.length === 1;
     drag.current = drag.current.filter((d) => d.id !== e.pointerId);
     if (drag.current.length < 2) pinch.current = null;
+    if (!p || !alone || !view || Math.hypot(e.clientX - p.x0, e.clientY - p.y0) > 6 || performance.now() - p.t0 > 500) return;
+    const r = canvasRef.current!.getBoundingClientRect();
+    const sx = e.clientX - r.left;
+    const sy = e.clientY - r.top;
+    const wx = view.cx + (sx - size.w / 2) / view.scale;
+    const wz = view.cz + (sy - size.h / 2) / view.scale;
+    if (tapTimer.current !== null) {
+      // The second tap of a double-click: that's a zoom, not a waypoint.
+      window.clearTimeout(tapTimer.current);
+      tapTimer.current = null;
+      return;
+    }
+    tapTimer.current = window.setTimeout(() => {
+      tapTimer.current = null;
+      // On the pin: clear it. Anywhere else in the district: move it there.
+      const onPin = waypoint && Math.hypot(waypoint.x - wx, waypoint.z - wz) * view.scale < 18;
+      if (onPin) onWaypoint(null);
+      else if (Math.abs(wx) < map.half && Math.abs(wz) < map.half) onWaypoint({ x: wx, z: wz });
+    }, 260);
   };
 
   return (
@@ -396,20 +432,21 @@ export function FullMap({
         <div className="pointer-events-none absolute bottom-3 left-3 flex flex-col gap-1 rounded-md bg-black/60 px-3 py-2 text-xs lg:hidden">
           {tasks.map((t) => (
             <span key={t.id} className={cn("flex items-center gap-2", t.done && "opacity-50 line-through")}>
-              <span className="inline-block size-3 rounded-full" style={{ background: t.colour }} />
-              <ErrandIcon id={icons[t.id]} className="size-3.5" />
+              <ErrandBadge id={t.done ? "done" : icons[t.id]} colour={t.colour} />
               {titles[t.id] ?? kindLabel(t.kind)}
             </span>
           ))}
           {barber && (
             <span className="flex items-center gap-2">
-              <span className="inline-block size-3 rounded-full" style={{ background: kindColour("barber", false) }} />
-              <ErrandIcon id="barber" className="size-3.5" />
+              <ErrandBadge id="barber" colour={kindColour("barber", false)} />
               {kindLabel("barber")}
             </span>
           )}
           <span className="flex items-center gap-2">
-            <span className="inline-block size-3 rounded-full bg-[#5ab0ff]" /> You
+            <span className="inline-flex size-5 shrink-0 items-center justify-center" aria-hidden>
+              <Navigation2 className="size-4" fill="#5ab0ff" color="#ffffff" strokeWidth={2} />
+            </span>
+            You
           </span>
         </div>
         {/* ODbL requires the attribution wherever the map data is shown. */}
@@ -429,20 +466,21 @@ export function FullMap({
               className={cn("flex items-center gap-2 text-left hover:text-white", t.done ? "text-white/40 line-through" : "text-white/85")}
               onClick={() => setView((v) => (v ? clamp({ ...v, cx: t.x, cz: t.z, scale: Math.max(v.scale, 2.5) }) : v))}
             >
-              <span className="inline-block size-3 shrink-0 rounded-full" style={{ background: t.colour }} />
-              <ErrandIcon id={icons[t.id]} className="size-4 shrink-0" />
+              <ErrandBadge id={t.done ? "done" : icons[t.id]} colour={t.colour} />
               <span className="min-w-0 truncate">{titles[t.id] ?? kindLabel(t.kind)}</span>
             </button>
           ))}
           {barber && (
             <span className="flex items-center gap-2 text-white/85">
-              <span className="inline-block size-3 rounded-full" style={{ background: kindColour("barber", false) }} />
-              <ErrandIcon id="barber" className="size-3.5" />
+              <ErrandBadge id="barber" colour={kindColour("barber", false)} />
               {kindLabel("barber")}
             </span>
           )}
           <span className="flex items-center gap-2 text-white/85">
-            <span className="inline-block size-3 rounded-full bg-[#5ab0ff]" /> You
+            <span className="inline-flex size-5 shrink-0 items-center justify-center" aria-hidden>
+              <Navigation2 className="size-4" fill="#5ab0ff" color="#ffffff" strokeWidth={2} />
+            </span>
+            You
           </span>
         </section>
         {found && (
@@ -462,9 +500,23 @@ export function FullMap({
             )}
           </section>
         )}
+        <section className="flex flex-col gap-2">
+          <h3 className="text-xs uppercase tracking-widest text-white/60">Waypoint</h3>
+          {waypoint ? (
+            <div className="flex items-center justify-between gap-2 text-white/85">
+              <span>{live ? `${Math.round(Math.hypot(waypoint.x - live.x, waypoint.z - live.z))} m away` : "Set"}</span>
+              <Button variant="neutral" size="sm" onClick={() => onWaypoint(null)}>
+                Clear
+              </Button>
+            </div>
+          ) : (
+            <span className="text-white/60">Click the map to mark a spot</span>
+          )}
+        </section>
         <section className="flex flex-col gap-1.5 text-white/70">
           <h3 className="text-xs uppercase tracking-widest text-white/60">Controls</h3>
           <span>Drag to move, scroll to zoom</span>
+          <span>Click the map to set a waypoint, the pin to clear it</span>
           <span>Click an errand to go to it</span>
           <span>
             <kbd>M</kbd> or <kbd>Esc</kbd> to close

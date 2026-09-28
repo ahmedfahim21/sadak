@@ -2,7 +2,11 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getSupabasePublishableKey, getSupabaseUrl } from "@/lib/supabase/env";
 
-function isPublicPath(pathname: string): boolean {
+/** Pages a signed-out visitor may open. A trailing slash is the same page
+ *  (PostHog asks for its paths with one, and `/login/` redirecting to
+ *  `/login` redirected forever). */
+export function isPublicPath(path: string): boolean {
+  const pathname = path.length > 1 ? path.replace(/\/+$/, "") : path;
   return (
     pathname === "/login" ||
     pathname.startsWith("/auth/") ||

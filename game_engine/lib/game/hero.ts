@@ -371,7 +371,8 @@ export class HeroAnimator {
    *  0.9m at a stroll, 1.9m at a jog, 2.1m flat out, so the cadence stays
    *  human (2 to 4.5 steps a second) at every speed. */
   static stepLength(speed: number): number {
-    return Math.min(2.1, Math.max(0.6, 0.5 + 0.3 * speed));
+    // A sprint bounds: long strides, not faster-spinning legs.
+    return Math.min(2.7, Math.max(0.6, 0.5 + 0.3 * speed));
   }
 
   update(m: HeroMotion): void {

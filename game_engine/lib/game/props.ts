@@ -311,6 +311,8 @@ export function makeAuto(canopyColour = 0xf5c518, bodyColour = 0x17191d): THREE.
   g.userData.halfLength = 1.35;
   g.userData.kind = "auto";
 
+  // The driver's saddle, for whoever drives it (transit.seatDriver).
+  g.userData.driverSeat = { seatY: 0.99, z: 0.32 };
   return g;
 }
 

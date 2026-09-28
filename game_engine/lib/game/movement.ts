@@ -6,11 +6,11 @@
  */
 
 export const WALK_SPEED = 4.6;
-export const SPRINT_SPEED = 9.5;
+export const SPRINT_SPEED = 12;
 
 /** m/s^2 pushing off, and braking (feet planted, or turning back). */
 const ACCEL = 16;
-const SPRINT_ACCEL = 11;
+const SPRINT_ACCEL = 14;
 const BRAKE = 26;
 /** Share of ground control left in the air. */
 const AIR_CONTROL = 0.3;
@@ -152,4 +152,29 @@ export function stepBody(b: Body, input: MoveInput, dt: number): MoveResult {
   const fwdAfter = b.vx * Math.sin(b.facing) + b.vz * Math.cos(b.facing);
   const crouch = b.windup > 0 ? 1 - b.windup / WINDUP : b.land;
   return { accel: (fwdAfter - fwdBefore) / Math.max(dt, 1e-4), turn, crouch, tookOff, landed };
+}
+
+/**
+ * Breath for sprinting: about ten seconds flat out from full, back in four
+ * standing (slower on the move). Run it out and you're winded: no sprint
+ * until it's back to a third.
+ */
+export type Stamina = { level: number; winded: boolean };
+export const newStamina = (): Stamina => ({ level: 1, winded: false });
+const DRAIN = 1 / 10;
+const RECOVER_STILL = 1 / 4;
+const RECOVER_MOVING = 1 / 7;
+const RECOVERED = 0.35;
+
+/** Whether this step may sprint, given the wish to and whether the body is moving. */
+export function stepStamina(s: Stamina, wantSprint: boolean, moving: boolean, dt: number): boolean {
+  const sprinting = wantSprint && moving && !s.winded && s.level > 0;
+  if (sprinting) {
+    s.level = Math.max(0, s.level - DRAIN * dt);
+    if (s.level === 0) s.winded = true;
+  } else {
+    s.level = Math.min(1, s.level + (moving ? RECOVER_MOVING : RECOVER_STILL) * dt);
+    if (s.winded && s.level >= RECOVERED) s.winded = false;
+  }
+  return sprinting;
 }

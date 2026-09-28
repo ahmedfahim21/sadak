@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { BarChart2 } from "lucide-react";
 import type { District } from "@/lib/game/districts";
-import { DISTRICT_COVER_IMAGES } from "@/lib/game/district-covers";
+import { DISTRICT_COVER_IMAGES, DISTRICT_GALLERY, DISTRICT_LINES } from "@/lib/game/district-covers";
 import type { ComfortLevel } from "@/lib/game/levels";
 import {
   BASE_LANG_OPTIONS,
@@ -13,7 +13,6 @@ import {
   writeStoredBaseLang,
   type BaseLangCode,
 } from "@/lib/i18n/base-lang";
-import { gloss } from "@/lib/i18n/gloss";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -443,16 +442,17 @@ export default function Title({
           <aside aria-live="polite" className="lg:sticky lg:top-20 lg:self-start">
             <Card className="gap-0 overflow-hidden py-0 lg:max-h-[calc(100dvh-7rem)]">
               {pickedSummary && (
-                <div className="relative h-28 shrink-0 border-b-2 border-border">
+                <div className="relative h-44 shrink-0 overflow-hidden border-b-2 border-border">
                   <Image
+                    key={pickedSummary.id}
                     src={DISTRICT_COVER_IMAGES[pickedSummary.id]}
-                    alt=""
+                    alt={DISTRICT_GALLERY[pickedSummary.id]?.cover ?? ""}
                     fill
-                    className="object-cover object-center"
+                    className="animate-[cover-drift_14s_ease-out_forwards] object-cover object-center"
                     sizes="21rem"
                   />
                   <span
-                    className="absolute inset-0 bg-linear-to-t from-black/75 to-black/10"
+                    className="absolute inset-0 bg-linear-to-t from-black/80 via-black/15 to-transparent"
                     aria-hidden
                   />
                   <span className="absolute bottom-3 left-4 right-4 flex flex-col">
@@ -477,35 +477,37 @@ export default function Title({
                   <Badge variant="neutral">{pickedComfort.title}</Badge>
                 </div>
 
-                <p className="text-sm leading-relaxed text-foreground/80">
-                  Hail an auto, order local food, buy something at a temple stall, and get a
-                  ticket — all in {pickedSummary?.languageLabel ?? "the local language"}.
-                </p>
+                {pickedSummary && (
+                  <p className="text-sm leading-relaxed text-foreground/80">
+                    {DISTRICT_LINES[pickedSummary.id]} Every errand here is in{" "}
+                    {pickedSummary.languageLabel}.
+                  </p>
+                )}
 
-                {picked && picked.phrases.length > 0 && (
-                  <div className="grid gap-2">
-                    <h3 className="text-xs font-heading uppercase tracking-widest text-foreground/60">
-                      You will say things like
-                    </h3>
-                    <ul className="grid gap-2">
-                      {picked.phrases.slice(0, 3).map((p) => (
-                        <li
-                          key={p.native}
-                          className="rounded-base border-2 border-border bg-secondary-background px-3 py-2"
-                        >
-                          <span
-                            className="block font-indic text-sm font-heading"
-                            lang={picked.language.slice(0, 2)}
-                          >
-                            {p.native}
-                          </span>
-                          <em className="text-xs not-italic text-foreground/70">
-                            {gloss(p.en, baseLang)}
-                          </em>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
+                {pickedSummary && DISTRICT_GALLERY[pickedSummary.id] && (
+                  <ul className="grid grid-cols-2 gap-2" aria-label={`${pickedSummary.city} in the game`}>
+                    {DISTRICT_GALLERY[pickedSummary.id].views.map((v) => (
+                      <li
+                        key={`${pickedSummary.id}-${v.caption}`}
+                        className="group relative aspect-[8/5] overflow-hidden rounded-base border-2 border-border"
+                      >
+                        <Image
+                          src={v.image}
+                          alt={v.caption}
+                          fill
+                          sizes="10rem"
+                          className="object-cover transition-transform duration-500 ease-out group-hover:scale-110"
+                        />
+                        <span
+                          className="absolute inset-0 bg-linear-to-t from-black/70 via-transparent to-transparent"
+                          aria-hidden
+                        />
+                        <span className="absolute right-1.5 bottom-1 left-1.5 truncate text-[10px] leading-tight text-white">
+                          {v.caption}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
                 )}
 
                 {detailError && (

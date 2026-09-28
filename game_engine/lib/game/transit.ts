@@ -192,6 +192,8 @@ export function makeBus(
 
   g.userData.wheels = wheels;
   g.userData.wheelRadius = wheelR;
+  // The driver, front right behind the windscreen.
+  g.add(makeDriver(seed + 5, { seatY: floor + 0.55, z: hl - 1.1, x: -W / 2 + 0.55 }));
   g.userData.halfLength = hl;
   g.userData.kind = "bus";
   return g;
@@ -213,10 +215,10 @@ function rider(
   z: number,
   seatY: number,
   rand: () => number,
-  opts: { sideSaddle?: boolean; helmet?: boolean }
+  opts: { sideSaddle?: boolean; helmet?: boolean; top?: number }
 ) {
   const skin = SKIN[Math.floor(rand() * SKIN.length)];
-  const top = opts.sideSaddle ? SARI[Math.floor(rand() * SARI.length)] : SHIRTS[Math.floor(rand() * SHIRTS.length)];
+  const top = opts.top ?? (opts.sideSaddle ? SARI[Math.floor(rand() * SARI.length)] : SHIRTS[Math.floor(rand() * SHIRTS.length)]);
   const legs = opts.sideSaddle ? top : 0x2b2f3a;
 
   // Torso leaning slightly forward.
@@ -247,6 +249,56 @@ function rider(
       parts.push(paint(arm, top));
     }
   }
+}
+
+/** Where a vehicle's driver sits, recorded by its model (userData.driverSeat). */
+export type DriverSeat = { seatY: number; z: number; x?: number; standing?: boolean };
+
+let driverMat: THREE.MeshLambertMaterial | null = null;
+
+/**
+ * Whoever is driving: seated at the wheel (an auto, a car, a bus, a cycle
+ * rickshaw's saddle) or, for Kolkata's hand-pulled rickshaw, standing
+ * between the shafts. One vertex-coloured mesh in the vehicle's own frame
+ * (+z forward), sitting on a seat at `seatY`, `z` along, `x` across.
+ */
+export function makeDriver(seed: number, o: DriverSeat & { top?: number }): THREE.Mesh {
+  const rand = mulberry32(seed);
+  const parts: THREE.BufferGeometry[] = [];
+  if (o.standing) {
+    // The puller: legs mid-stride, leaning into the shafts, hands low on the bar.
+    const skin = SKIN[Math.floor(rand() * SKIN.length)];
+    const vest = SHIRTS[Math.floor(rand() * SHIRTS.length)];
+    const lungi = [0xe9e4d8, 0x3f5b3f, 0x2f5f8f][Math.floor(rand() * 3)];
+    const torso = new THREE.BoxGeometry(0.36, 0.56, 0.22).rotateX(0.3).translate(0, 1.2, o.z + 0.08);
+    parts.push(paint(torso, vest));
+    parts.push(box(0.2, 0.22, 0.2, 0, 1.6, o.z + 0.2, skin));
+    parts.push(box(0.4, 0.4, 0.3, 0, 0.78, o.z, lungi));
+    for (const [sx, dz] of [[-0.1, 0.12], [0.1, -0.12]]) parts.push(box(0.12, 0.6, 0.13, sx, 0.3, o.z + dz, skin));
+    for (const sx of [-0.21, 0.21]) {
+      const arm = new THREE.BoxGeometry(0.09, 0.55, 0.09).rotateX(-0.35).translate(sx, 0.95, o.z + 0.22);
+      parts.push(paint(arm, skin));
+    }
+  } else {
+    rider(parts, o.z, o.seatY, rand, { helmet: false, top: o.top });
+  }
+  const g = merge(parts);
+  if (o.x) g.translate(o.x, 0, 0);
+  driverMat ??= new THREE.MeshLambertMaterial({ vertexColors: true });
+  const m = new THREE.Mesh(g, driverMat);
+  m.name = "driver";
+  m.castShadow = true;
+  return m;
+}
+
+/** Put a driver in the vehicle's seat (traffic, and an errand's cab). */
+export function seatDriver(vehicle: THREE.Object3D, seed: number, top?: number): THREE.Mesh {
+  const seat = vehicle.userData.driverSeat as DriverSeat | undefined;
+  if (!seat) throw new Error(`[transit] ${vehicle.name || "vehicle"} has no driver's seat`);
+  const d = makeDriver(seed, { ...seat, top });
+  vehicle.add(d);
+  vehicle.userData.driver = d;
+  return d;
 }
 
 /**

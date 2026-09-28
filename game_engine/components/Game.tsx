@@ -21,6 +21,7 @@ import { BARBER_INTERACT_LABEL, BARBER_XP, barberTaskId } from "@/lib/game/barbe
 import type { DistrictProgress } from "@/lib/game/progress";
 import { errandLevelNumber, lessonTierFor } from "@/lib/game/levels";
 import { useGameAudio } from "@/lib/audio/useGameAudio";
+import { ambience } from "@/lib/audio/ambience";
 import { playSfx } from "@/lib/audio/sfx";
 import Title from "./Title";
 import EnterLoading from "./EnterLoading";
@@ -52,7 +53,8 @@ import {
 } from "@/lib/game/npc-memory";
 import { prefetchTtsUrls, revokeTtsPrefetchMap, type TtsPrefetchMap } from "@/lib/tts/prefetch-client";
 import { useDiscovery } from "@/components/map/useDiscovery";
-import { taskLook } from "@/components/map/mapKit";
+import { taskLook, type Waypoint } from "@/components/map/mapKit";
+import { useWaypointRoute } from "@/components/map/useWaypoint";
 
 /** Minimum time the enter screen stays up, so its controls are readable even
  *  when the district and progress fetches come back instantly. */
@@ -71,6 +73,8 @@ export default function GameShell() {
   /** The district's haircut, from its stored pack like the errands. */
   const [barberTask, setBarberTask] = useState<StreetTask | null>(null);
   const [taskFinale, setTaskFinale] = useState<DistrictTaskPack["finale"] | null>(null);
+  /** The finale, shown once as the last errand is done; the city stays open to explore after. */
+  const [finaleOpen, setFinaleOpen] = useState(false);
   const [entering, setEntering] = useState(false);
   const [enteringCity, setEnteringCity] = useState<string | undefined>();
   // Survives `district` going back to null so Title (which fully remounts
@@ -85,13 +89,19 @@ export default function GameShell() {
   // place by the engine and read by the minimap's own rAF, never diffed.
   const [live, setLive] = useState<LiveState | null>(null);
   const [mapOpen, setMapOpen] = useState(false);
+  /** A spot marked on the full map to head for; cleared on arrival. */
+  const [waypoint, setWaypoint] = useState<Waypoint | null>(null);
+  const clearWaypoint = useCallback(() => setWaypoint(null), []);
+  const route = useWaypointRoute(worldMap, live, waypoint, clearWaypoint);
+  useEffect(() => {
+    gameRef.current?.setWaypoint(waypoint);
+  }, [waypoint]);
   const mapOpenRef = useRef(false);
   const [talking, setTalking] = useState<StreetTask | null>(null);
   const [barberOpen, setBarberOpen] = useState(false);
   const [cash, setCash] = useState(0);
   const [xp, setXp] = useState(0);
   const [completed, setCompleted] = useState<Set<string>>(new Set());
-  const [artifacts, setArtifacts] = useState<string[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [phrasesOpen, setPhrasesOpen] = useState(false);
@@ -207,17 +217,18 @@ export default function GameShell() {
         }
 
         setWorldMap(map);
+        setWaypoint(null);
         setDistrict(districtPayload.district);
         setTasks(districtPayload.tasks);
         setBarberTask(districtPayload.taskPack.barber);
         setTaskFinale(districtPayload.taskPack.finale);
+        setFinaleOpen(false);
         setLastDistrictId(districtId);
         setComfort(pickedComfort);
         setBaseLang(pickedBaseLang);
         setCash(saved.cash);
         setXp(saved.xp);
         setCompleted(new Set(saved.completedTaskIds));
-        setArtifacts([]);
         setNpcMemory({});
         metRef.current = new Set();
         posthog.capture("district_entered", {
@@ -301,11 +312,12 @@ export default function GameShell() {
       barberOpen ||
       menuOpen ||
       mapOpen ||
+      finaleOpen ||
       card !== null ||
       (mobilePlay && portrait);
     g.paused = frozen;
     if (frozen) g.releasePointer();
-  }, [talking, barberOpen, menuOpen, mapOpen, card, mobilePlay, portrait]);
+  }, [talking, barberOpen, menuOpen, mapOpen, finaleOpen, card, mobilePlay, portrait]);
 
   // Music sits under the dialogue's TTS and the held mic, and stays down
   // for the pause menu and the portrait rotate-gate, so it never fights the
@@ -340,8 +352,13 @@ export default function GameShell() {
       (window as unknown as Record<string, unknown>).__game = game;
     }
     game.start();
+    // The street's sound, fed from where the player is ten times a second.
+    ambience.start(worldMap, district.id);
+    const sounds = window.setInterval(() => ambience.update(game.soundscape(), 0.1), 100);
 
     return () => {
+      window.clearInterval(sounds);
+      ambience.stop();
       game.dispose();
       gameRef.current = null;
       setLive(null);
@@ -498,9 +515,6 @@ export default function GameShell() {
 
       setCompleted(nextCompleted);
       setCash(nextCash);
-      setArtifacts((prev) =>
-        prev.includes(task.completionNote) ? prev : [...prev, task.completionNote]
-      );
       gameRef.current?.markDone(taskId);
       playSfx("cash");
       posthog.capture("errand_completed", {
@@ -526,6 +540,7 @@ export default function GameShell() {
       setToast(`Done: ${task.title}`);
       setTimeout(() => setToast(null), 4000);
       setTalking(null);
+      if (tasks.every((t) => nextCompleted.has(t.id))) setFinaleOpen(true);
       // The auto and the bus actually take you somewhere once you have
       // talked your way on.
       if (task.kind === "auto" || task.kind === "bus") gameRef.current?.startRide(taskId);
@@ -557,7 +572,6 @@ export default function GameShell() {
     setCash(0);
     setXp(0);
     setCompleted(new Set());
-    setArtifacts([]);
     setToast(null);
     setMenuOpen(false);
     setPhrasesOpen(false);
@@ -574,6 +588,7 @@ export default function GameShell() {
     talking !== null ||
     barberOpen ||
     menuOpen ||
+    finaleOpen ||
     card !== null ||
     (mobilePlay && portrait);
 
@@ -603,6 +618,8 @@ export default function GameShell() {
         onSkipRide={() => gameRef.current?.skipRide()}
         onOpenMap={() => setMapOpen(true)}
         onPlace={claimPlace}
+        waypoint={waypoint}
+        route={route}
         district={district}
         baseLang={baseLang}
         tasks={tasks}
@@ -610,7 +627,6 @@ export default function GameShell() {
         live={live}
         cash={cash}
         xp={xp}
-        artifacts={artifacts}
         completed={completed}
         errandProgress={{ done: errandsDone, total: tasks.length }}
         onOpen={openTalk}
@@ -646,6 +662,9 @@ export default function GameShell() {
           titles={Object.fromEntries(tasks.map((t) => [t.id, t.title]))}
           icons={Object.fromEntries(tasks.map((t) => [t.id, taskLook(t, district.theme.landmark).icon]))}
           found={discovery?.found ?? null}
+          waypoint={waypoint}
+          route={route}
+          onWaypoint={setWaypoint}
           onClose={() => setMapOpen(false)}
         />
       )}
@@ -713,8 +732,10 @@ export default function GameShell() {
         </DialogContent>
       </Dialog>
 
+      {/* Closing it (Esc, outside, Keep exploring) leaves you in the city; it
+          used to leave the district, and came back on every visit after. */}
       {allDone && finale && (
-        <Dialog open onOpenChange={(open) => !open && leaveDistrict()}>
+        <Dialog open={finaleOpen} onOpenChange={setFinaleOpen}>
           <DialogContent className="text-center sm:max-w-lg">
             <DialogHeader>
               <DialogTitle className="text-3xl leading-tight">{finale.title}</DialogTitle>
@@ -725,7 +746,8 @@ export default function GameShell() {
             <p className="text-sm text-foreground/80">
               ₹{totalTaskRewardForTasks(tasks).toLocaleString("en-IN")} earned in {district.name}
             </p>
-            <DialogFooter className="justify-center sm:justify-center">
+            <DialogFooter className="justify-center gap-2 sm:justify-center">
+              <Button onClick={() => setFinaleOpen(false)}>Keep exploring</Button>
               <Button variant="neutral" onClick={leaveDistrict}>
                 Choose another district
               </Button>

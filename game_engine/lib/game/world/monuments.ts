@@ -12,6 +12,7 @@
 
 import * as THREE from "three";
 import { Parts, archedSlab, onion, stripedShaft } from "./vc";
+import { mulberry32 } from "../props";
 
 export type LocalBox = { x: number; z: number; hw: number; hd: number; rot?: number };
 /** Height from y0 at the local -z edge to y1 at +z (flat when equal). */
@@ -56,6 +57,9 @@ export function finish(
  * footprint. Returns the platform's depth span so builders can lay things
  * out on top. Edge walls stop the player walking off (or up) the sides.
  */
+/** The highest plinth a person steps up onto anywhere along its edge, metres. */
+const STEPPABLE = 0.7;
+
 function platform(
   P: Parts,
   C: LocalBox[],
@@ -80,7 +84,10 @@ function platform(
   for (const s of [-1, 1]) P.box(0.6, rise + 0.3, run, s * (stairW / 2 + 0.3), (rise + 0.3) / 2, d / 2 - run / 2, stone);
   Hs.push({ x: 0, z: zc, hw: w / 2, hd: depth / 2, y0: rise, y1: rise });
   Hs.push({ x: 0, z: d / 2 - run / 2, hw: stairW / 2, hd: run / 2, y0: rise, y1: 0 });
-  if (edgeWalls) {
+  // Walls round the edge keep the player off a plinth except by its stair;
+  // one low enough to step onto (and off) is just a step, and a wall along
+  // it was an invisible fence when standing on top.
+  if (edgeWalls && rise > STEPPABLE) {
     const t = 0.5;
     C.push({ x: 0, z: top + t / 2, hw: w / 2, hd: t / 2 });
     for (const s of [-1, 1]) C.push({ x: (s * (w - t)) / 2, z: zc, hw: t / 2, hd: depth / 2 });
@@ -336,6 +343,177 @@ export function temple(w: number, d: number, st: TempleStyle): Monument {
   P.cone(0.18, 0.3, 0, y + ph - 0.7, sz + s / 2 + 0.8, GOLD, 8);
   // Inside the mandapa, by the sanctum door.
   return finish(P, C, Hs, { x: 0, z: sz + s / 2 + 1.6 });
+}
+
+/**
+ * A Gujarati (Maru-Gurjara) temple, as the Swaminarayan mandirs and
+ * Ahmedabad's old shrines are built: a moulded plinth up a flight of steps,
+ * an open hall of carved pillars under a low ghumat dome ringed by small
+ * kiosks, balconied windows (jharokhas) on its flanks, and behind it the
+ * sanctum's spire clustered with smaller spires (urushringas) climbing its
+ * faces, a gilded pot and a saffron flag on each. Marble or sandstone.
+ */
+export function gurjaraTemple(w: number, d: number, o: { stone: number; trim: number; plinth: number }): Monument {
+  const P = new Parts();
+  const C: LocalBox[] = [];
+  const Hs: LocalRect[] = [];
+  const pf = platform(P, C, Hs, w, d, o.plinth, o.stone, 0.4);
+  const y = o.plinth;
+  // Mouldings round the plinth.
+  for (const k of [0.3, 0.65]) P.box(w + 0.12, 0.12, pf.depth + 0.12, 0, o.plinth * k, pf.zc, o.trim);
+
+  // The sanctum at the back, its spire clustered with smaller spires.
+  const s = Math.min(w * 0.42, pf.depth * 0.42);
+  const sz = pf.top + s / 2 + 0.4;
+  const sh = s * 0.7;
+  P.box(s, sh, s, 0, y + sh / 2, sz, o.stone);
+  for (const f of [0.25, 0.75]) P.box(s + 0.1, 0.1, s + 0.1, 0, y + sh * f, sz, o.trim);
+  C.push({ x: 0, z: sz, hw: s / 2, hd: s / 2 });
+  const spire = (x: number, yy: number, z: number, b: number, h: number) => {
+    const n = 7;
+    for (let i = 0; i < n; i++) {
+      const t = i / n;
+      const bs = b * (1 - Math.pow(t, 1.6) * 0.7);
+      P.box(bs, (h / n) * 0.94, bs, x, yy + (h / n) * (i + 0.5), z, i % 2 ? o.trim : o.stone);
+    }
+    P.add(new THREE.SphereGeometry(b * 0.22, 10, 6).scale(1, 0.45, 1).translate(x, yy + h + b * 0.06, z), o.trim);
+    P.cone(b * 0.08, b * 0.3, x, yy + h + b * 0.2, z, GOLD, 8);
+  };
+  const H = Math.max(4, s * 1.9);
+  spire(0, y + sh, sz, s * 0.95, H);
+  // Urushringas: half-height spires on each face, and smaller at the corners.
+  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) spire(dx * s * 0.42, y + sh, sz + dz * s * 0.42, s * 0.42, H * 0.55);
+  for (const [dx, dz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) spire(dx * s * 0.44, y + sh, sz + dz * s * 0.44, s * 0.26, H * 0.34);
+  P.cyl(0.05, 0.05, 1.8, 0, y + sh + H + s * 0.4, sz, 0x5b3a22, 4);
+  P.box(0.05, 0.5, 0.9, 0, y + sh + H + s * 0.4 + 0.6, sz + 0.45, SAFFRON);
+
+  // The hall: carved pillars (square shaft, octagonal band, bracket
+  // capital) under a beamed roof, open at the front and sides.
+  const mw = Math.min(w * 0.82, s * 1.6);
+  const md = Math.max(3, pf.front - (sz + s / 2) - 0.4);
+  const mz = sz + s / 2 + md / 2;
+  const ph = Math.min(3.6, 2.4 + mw * 0.08);
+  const xs = mw >= 7 ? [-mw / 2 + 0.3, -mw / 6, mw / 6, mw / 2 - 0.3] : [-mw / 2 + 0.3, mw / 2 - 0.3];
+  for (const px of xs) {
+    for (const pz of [mz - md / 2 + 0.3, mz + md / 2 - 0.3]) {
+      P.box(0.34, ph * 0.55, 0.34, px, y + ph * 0.275, pz, o.stone);
+      P.cyl(0.2, 0.2, ph * 0.25, px, y + ph * 0.67, pz, o.trim, 8);
+      P.box(0.34, ph * 0.12, 0.34, px, y + ph * 0.86, pz, o.stone);
+      P.box(0.8, 0.14, 0.3, px, y + ph * 0.96, pz, o.trim); // bracket capital
+      C.push({ x: px, z: pz, hw: 0.2, hd: 0.2 });
+    }
+  }
+  P.box(mw + 0.6, 0.35, md + 0.6, 0, y + ph + 0.17, mz, o.stone);
+  P.box(mw + 0.9, 0.12, md + 0.9, 0, y + ph + 0.4, mz, o.trim); // chhajja
+  // The ghumat: a low dome on a drum, ringed by small kiosks at the corners.
+  const r = Math.min(mw, md) * 0.36;
+  P.cyl(r * 1.05, r * 1.05, 0.5, 0, y + ph + 0.7, mz, o.stone, 16);
+  P.dome(r, 0, y + ph + 0.95, mz, o.stone, 1);
+  P.cone(0.1, 0.45, 0, y + ph + 0.95 + r * 1.3, mz, GOLD, 8);
+  for (const [dx, dz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+    const kx = dx * (mw / 2 - 0.3);
+    const kz = mz + dz * (md / 2 - 0.3);
+    for (const [a, b] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) P.box(0.08, 0.7, 0.08, kx + a * 0.3, y + ph + 0.8, kz + b * 0.3, o.stone);
+    P.dome(0.42, kx, y + ph + 1.15, kz, o.stone, 1);
+  }
+  // Jharokhas: a balconied window on each flank of the hall.
+  for (const sx of [-1, 1]) {
+    const jx = sx * (mw / 2 + 0.35);
+    P.box(0.7, 0.18, 1.4, jx, y + ph * 0.45, mz, o.trim);
+    for (const bz of [-0.55, 0, 0.55]) P.box(0.08, 0.9, 0.08, jx + sx * 0.25, y + ph * 0.45 + 0.54, mz + bz, o.stone);
+    P.box(0.8, 0.1, 1.6, jx, y + ph * 0.45 + 1.05, mz, o.trim);
+    P.dome(0.45, jx, y + ph * 0.45 + 1.1, mz, o.stone, 1);
+  }
+  // Bell at the sanctum door.
+  P.cyl(0.02, 0.02, 0.5, 0, y + ph - 0.25, sz + s / 2 + 0.6, 0x3a3a3a, 4);
+  P.cone(0.16, 0.26, 0, y + ph - 0.6, sz + s / 2 + 0.6, GOLD, 8);
+  P.box(s * 0.3, sh * 0.6, 0.08, 0, y + sh * 0.3, sz + s / 2 + 0.04, DARK);
+  const m = finish(P, C, Hs, { x: 0, z: sz + s / 2 + 1.4 });
+  m.group.name = "gurjara-temple";
+  return m;
+}
+
+/**
+ * A wayside shrine, the kind on every Indian street corner (a Hanuman
+ * temple, the Bhagyalaxmi shrine at the Charminar's foot): a small cella
+ * painted in sindoor orange or whitewash, a little tower on it, and in
+ * front a tin canopy on steel posts hung with brass bells and marigold
+ * strings, a couple of steps up, saffron flags on bamboo, a lamp glowing
+ * in the doorway.
+ */
+export function waysideShrine(w: number, d: number, o: { wall: number; roof: number; tower: "curved" | "dome" }): Monument {
+  const P = new Parts();
+  const C: LocalBox[] = [];
+  const Hs: LocalRect[] = [];
+  const s = Math.max(2.2, Math.min(3.6, Math.min(w, d) * 0.45));
+  const rise = 0.34;
+  const cz = -d / 2 + s / 2 + 0.6;
+  // The platform: two steps up (low enough to step on anywhere).
+  const pd = Math.min(d - 0.4, s + 3.2);
+  const pz = -d / 2 + 0.2 + pd / 2;
+  P.box(Math.min(w - 0.4, s + 2.4), rise, pd, 0, rise / 2, pz, 0xd8d0c0);
+  P.box(Math.min(w - 0.4, s + 2.4) + 0.4, rise / 2, 0.4, 0, rise / 4, pz + pd / 2 + 0.2, 0xd8d0c0);
+  Hs.push({ x: 0, z: pz, hw: Math.min(w - 0.4, s + 2.4) / 2, hd: pd / 2, y0: rise, y1: rise });
+  // The cella.
+  const ch = s * 0.95;
+  P.box(s, ch, s, 0, rise + ch / 2, cz, o.wall);
+  P.box(s + 0.2, 0.18, s + 0.2, 0, rise + ch + 0.09, cz, 0xf4efe4);
+  P.box(s * 0.42, ch * 0.62, 0.06, 0, rise + ch * 0.31, cz + s / 2 + 0.03, 0x3a1d10);
+  P.box(s * 0.2, ch * 0.3, 0.07, 0, rise + ch * 0.2, cz + s / 2 + 0.04, 0xffc94a); // lamp-lit murti
+  for (const sx of [-1, 1]) P.box(0.12, ch * 0.7, 0.1, sx * s * 0.26, rise + ch * 0.35, cz + s / 2 + 0.05, 0xf4efe4);
+  C.push({ x: 0, z: cz, hw: s / 2, hd: s / 2 });
+  // Its tower: a small curved shikhara, or a dome.
+  if (o.tower === "curved") {
+    // Courses drawing in, all in the shrine's colour, a thin pale band
+    // every other one (not stripes: that read as a traffic cone).
+    const n = 5;
+    const ch2 = s * 0.18;
+    for (let i = 0; i < n; i++) {
+      const bs = s * 0.78 * (1 - Math.pow(i / n, 1.6) * 0.62);
+      const yy = rise + ch + 0.2 + ch2 * (i + 0.5);
+      P.box(bs, ch2 * 0.96, bs, 0, yy, cz, o.wall);
+      if (i % 2) P.box(bs + 0.06, 0.05, bs + 0.06, 0, yy - ch2 * 0.45, cz, 0xf4efe4);
+    }
+    const top = rise + ch + 0.2 + ch2 * n;
+    P.add(new THREE.SphereGeometry(s * 0.15, 10, 5).scale(1, 0.45, 1).translate(0, top + 0.04, cz), 0xf4efe4);
+    P.cone(0.07, 0.3, 0, top + 0.25, cz, GOLD, 6);
+  } else {
+    P.dome(s * 0.36, 0, rise + ch + 0.18, cz, o.wall, 1.1);
+    P.cone(0.07, 0.3, 0, rise + ch + 0.18 + s * 0.55, cz, GOLD, 6);
+  }
+  // The canopy: corrugated tin sloping to the street, on four steel posts.
+  const cw = Math.min(w - 0.6, s + 2);
+  const cdp = Math.min(3, pd - s - 0.4);
+  const ccz = cz + s / 2 + cdp / 2;
+  for (const sx of [-1, 1]) {
+    P.cyl(0.05, 0.05, 2.6, sx * (cw / 2 - 0.1), rise + 1.3, ccz + cdp / 2 - 0.1, 0x6f7479, 6);
+    C.push({ x: sx * (cw / 2 - 0.1), z: ccz + cdp / 2 - 0.1, hw: 0.08, hd: 0.08 });
+  }
+  const tin = new THREE.BoxGeometry(cw + 0.4, 0.05, cdp + 0.4).rotateX(0.12);
+  P.add(tin.translate(0, rise + 2.75, ccz), o.roof);
+  for (let x = -cw / 2; x <= cw / 2; x += 0.3) P.add(new THREE.BoxGeometry(0.04, 0.03, cdp + 0.4).rotateX(0.12).translate(x, rise + 2.79, ccz), 0x5f6a72);
+  // Bells along the front beam and marigold strings looped between the posts.
+  P.box(cw, 0.08, 0.08, 0, rise + 2.45, ccz + cdp / 2 - 0.1, 0x6f7479);
+  for (let x = -cw / 2 + 0.4; x < cw / 2 - 0.2; x += 0.45) {
+    P.cyl(0.01, 0.01, 0.25, x, rise + 2.3, ccz + cdp / 2 - 0.1, 0x3a3a3a, 3);
+    P.cone(0.07, 0.12, x, rise + 2.12, ccz + cdp / 2 - 0.1, GOLD, 8);
+  }
+  for (let k = 0; k <= 12; k++) {
+    const t = k / 12;
+    const x = -cw / 2 + 0.1 + t * (cw - 0.2);
+    const sag = Math.sin(Math.PI * t) * 0.35;
+    P.add(new THREE.SphereGeometry(0.06, 5, 4).translate(x, rise + 2.35 - sag, ccz + cdp / 2 - 0.05), k % 2 ? 0xf5a623 : 0xe8601c);
+  }
+  // Saffron flags on bamboo poles at the back corners.
+  for (const sx of [-1, 1]) {
+    const fx = sx * (s / 2 + 0.35);
+    P.cyl(0.03, 0.03, 4.5, fx, rise + 2.25, cz - s / 2 + 0.1, 0xb89a62, 4);
+    const flag = new THREE.ShapeGeometry(new THREE.Shape([new THREE.Vector2(0, 0), new THREE.Vector2(0, -0.5), new THREE.Vector2(0.8, -0.25)]));
+    P.add(flag.rotateY(-Math.PI / 2).translate(fx, rise + 4.5, cz - s / 2 + 0.1), SAFFRON);
+  }
+  const m = finish(P, C, Hs, { x: 0, z: ccz });
+  m.group.name = "wayside-shrine";
+  return m;
 }
 
 /* ------------------------------------------------------------------ *
@@ -856,10 +1034,25 @@ export function kabutarKhana(w: number, d: number): Monument {
 
 /** Colonial block: stuccoed floors with a pillared portico and pediment,
  *  green louvred shutters. Park Street, Fort Kochi. */
-export function colonialBlock(w: number, d: number, floors: number, wall: number): Monument {
+/** How a colonial block is dressed: Calcutta's mansion blocks and public
+ *  buildings share a vocabulary but not a face. */
+export type ColonialDress = {
+  /** A pedimented portico on columns at the front. */
+  portico?: boolean;
+  /** Domed octagonal turrets at the four corners (the Park Street mansions). */
+  turrets?: boolean;
+  /** Cast-iron balconies on alternate bays of the upper floors. */
+  balconies?: boolean;
+  /** A colonnade over the footpath along the front (Chowringhee). */
+  arcade?: boolean;
+  trim?: number;
+};
+
+export function colonialBlock(w: number, d: number, floors: number, wall: number, dress: ColonialDress = { portico: true }): Monument {
   const P = new Parts();
   const C: LocalBox[] = [];
-  const TRIM = 0xf4efe4;
+  const TRIM = dress.trim ?? 0xf4efe4;
+  const IRON = 0x2a2d31;
   const SHUTTER = 0x2f5e3f;
   const fh = 4;
   const h = floors * fh;
@@ -891,6 +1084,21 @@ export function colonialBlock(w: number, d: number, floors: number, wall: number
         const [hx, hz] = at(u, 0.14);
         P.box(1.7, 0.22, 0.28, hx, fh * f + 3.2, hz, TRIM, rot);
         P.box(1.4, 0.12, 0.22, hx, fh * f + 0.7, hz, TRIM, rot);
+        if (dress.balconies && k % 2 === 0) {
+          // A cast-iron balcony: a slab on brackets, a railing of balusters.
+          const [bx, bz2] = at(u, 0.5);
+          P.box(2.1, 0.12, 0.9, bx, fh * f + 0.6, bz2, TRIM, rot);
+          const [rx, rz] = at(u, 0.92);
+          P.box(2.1, 0.06, 0.06, rx, fh * f + 1.6, rz, IRON, rot);
+          for (let b = -4; b <= 4; b++) {
+            const [ix, iz] = at(u + b * 0.24, 0.92);
+            P.box(0.03, 0.95, 0.03, ix, fh * f + 1.12, iz, IRON, rot);
+          }
+          for (const e of [-1, 1]) {
+            const [ex, ez] = at(u + e * 1.02, 0.5);
+            P.box(0.03, 0.95, 0.85, ex, fh * f + 1.12, ez, IRON, rot);
+          }
+        }
       }
       const [px, pz] = at(-len / 2 + k * bay, 0.1);
       if (k > 0) P.box(0.35, h - 0.4, 0.2, px, h / 2, pz, TRIM, rot);
@@ -920,6 +1128,40 @@ export function colonialBlock(w: number, d: number, floors: number, wall: number
   rail(bw, 0, bz - bd / 2, "x");
   rail(bd, bw / 2, bz, "z");
   rail(bd, -bw / 2, bz, "z");
+  // Turrets at the corners: octagonal, a storey above the parapet, domed.
+  if (dress.turrets) {
+    const r = Math.min(2.4, bw * 0.06, bd * 0.08);
+    for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      const tx = (sx * bw) / 2;
+      const tz = bz + (sz * bd) / 2;
+      P.cyl(r, r, h + 3.5, tx, (h + 3.5) / 2, tz, wall, 8);
+      for (let f = 1; f <= floors; f++) P.cyl(r + 0.12, r + 0.12, 0.3, tx, fh * f, tz, TRIM, 8);
+      P.cyl(r + 0.3, r + 0.3, 0.4, tx, h + 3.7, tz, TRIM, 8);
+      P.dome(r * 0.95, tx, h + 3.9, tz, 0x7a8a8c, 1);
+      P.cyl(0.06, 0.06, 1.2, tx, h + 3.9 + r * 1.2 + 0.4, tz, IRON, 4);
+      C.push({ x: tx, z: tz, hw: r * 0.92, hd: r * 0.92 });
+    }
+  }
+  // A colonnade along the front, over the footpath: columns and a roof that
+  // is the first floor's verandah.
+  if (dress.arcade) {
+    const depth = Math.min(3, d / 2 - (bz + bd / 2) - 0.2);
+    if (depth > 1.5) {
+      const az = bz + bd / 2 + depth;
+      const n = Math.max(3, Math.floor(bw / 4));
+      for (let k = 0; k <= n; k++) {
+        const x = -bw / 2 + 0.4 + (k * (bw - 0.8)) / n;
+        P.cyl(0.26, 0.3, fh, x, fh / 2, az - 0.3, TRIM, 10);
+        P.box(0.7, 0.3, 0.7, x, 0.15, az - 0.3, TRIM);
+        C.push({ x, z: az - 0.3, hw: 0.3, hd: 0.3 });
+      }
+      P.box(bw, 0.4, depth + 0.2, 0, fh + 0.2, bz + bd / 2 + depth / 2, TRIM);
+      // Its verandah rail above.
+      P.box(bw, 0.08, 0.08, 0, fh + 1.3, az - 0.1, IRON);
+      for (let x = -bw / 2 + 0.2; x < bw / 2; x += 0.3) P.box(0.04, 0.9, 0.04, x, fh + 0.85, az - 0.1, IRON);
+    }
+  }
+  if (!dress.portico) return finish(P, C, []);
   // Portico.
   const pw = Math.min(bw * 0.5, 14);
   const pz = bz + bd / 2 + 1.6;
@@ -1069,33 +1311,113 @@ export function parkedBus(P: Parts, x: number, z: number, len: number, livery: {
   }
 }
 
-/** A seafront promenade: sea wall, benches and lamps along the long side. */
+/**
+ * A seafront square (Fort Kochi's Vasco da Gama Square): laterite paving
+ * to a stone parapet and iron railing over the water (local -z), a rain
+ * tree spreading over a round planter you can sit on, benches facing the
+ * sea, the seafood stalls under blue tarps where the catch is laid out on
+ * ice to be picked and fried, a tender-coconut cart, and lamp posts.
+ */
 export function promenade(w: number, d: number): Monument {
   const P = new Parts();
   const C: LocalBox[] = [];
-  const wallZ = -d / 2 + 0.4;
-  P.box(w, 0.9, 0.5, 0, 0.45, wallZ, 0xd8cfbd);
-  C.push({ x: 0, z: wallZ, hw: w / 2, hd: 0.3 });
-  const n = Math.max(2, Math.floor(w / 8));
-  for (let k = 0; k < n; k++) {
-    const x = -w / 2 + (w * (k + 0.5)) / n;
-    // Bench facing the water.
-    P.box(1.8, 0.1, 0.5, x, 0.45, wallZ + 1.2, 0x8a5a2b);
-    P.box(1.8, 0.45, 0.08, x, 0.7, wallZ + 1.45, 0x8a5a2b);
-    for (const s of [-0.8, 0.8]) P.box(0.08, 0.45, 0.45, x + s, 0.22, wallZ + 1.2, 0x3a3d42);
-    C.push({ x, z: wallZ + 1.2, hw: 0.9, hd: 0.3 });
-    if (k % 2 === 0) {
-      P.cyl(0.07, 0.09, 4.2, x + 3, 2.1, wallZ + 0.9, 0x2e5a3a, 6);
-      P.add(new THREE.SphereGeometry(0.28, 8, 6).translate(x + 3, 4.4, wallZ + 0.9), 0xfff3c8);
-      C.push({ x: x + 3, z: wallZ + 0.9, hw: 0.15, hd: 0.15 });
+  const rand = mulberry32(Math.round(w * 131 + d * 17));
+  const PAVE = 0xa8644a;
+  const PAVE_LIGHT = 0xc9a07e;
+  const STONE = 0xd8cfbd;
+  const IRON = 0x2b2f33;
+  const WOOD = 0x8a5a2b;
+
+  // Paving, with lighter bands every couple of metres.
+  P.box(w, 0.06, d, 0, 0.03, 0, PAVE);
+  for (let x = -w / 2 + 2; x < w / 2; x += 2.2) P.box(0.18, 0.065, d, x, 0.035, 0, PAVE_LIGHT);
+  P.box(w, 0.07, 0.35, 0, 0.035, d / 2 - 0.18, PAVE_LIGHT);
+
+  // The sea edge: a stone parapet and an iron railing on it.
+  const edge = -d / 2 + 0.3;
+  P.box(w, 0.55, 0.5, 0, 0.275, edge, STONE);
+  P.box(w + 0.1, 0.08, 0.6, 0, 0.58, edge, 0xe8e1d2);
+  for (let x = -w / 2 + 0.2; x <= w / 2 - 0.1; x += 1.2) P.cyl(0.03, 0.03, 0.55, x, 0.88, edge, IRON, 6);
+  for (const y of [0.9, 1.14]) P.add(new THREE.CylinderGeometry(0.025, 0.025, w, 6).rotateZ(Math.PI / 2).translate(0, y, edge), IRON);
+  C.push({ x: 0, z: edge, hw: w / 2, hd: 0.3 });
+
+  // The rain tree: a thick trunk out of a round laterite planter (a seat
+  // all round), its canopy spreading wide and flat.
+  const tx = -w * 0.25;
+  const tz = -d * 0.08;
+  P.cyl(1.3, 1.35, 0.5, tx, 0.25, tz, 0x9a5a3c, 16);
+  P.cyl(1.38, 1.38, 0.08, tx, 0.52, tz, 0xc9a07e, 16);
+  P.cyl(0.26, 0.38, 3.4, tx, 2.2, tz, 0x5b4331, 8);
+  for (const [bx, bz, a] of [[1, 0.3, 0.7], [-0.8, 0.6, -0.6], [0.2, -1, 0.5]]) {
+    P.add(new THREE.CylinderGeometry(0.1, 0.16, 2.2, 6).rotateZ(a).rotateY(Math.atan2(bz, bx)).translate(tx + bx * 0.7, 4.1, tz + bz * 0.7), 0x5b4331);
+  }
+  for (let i = 0; i < 7; i++) {
+    const a = (i / 7) * Math.PI * 2 + rand() * 0.4;
+    const r = i === 0 ? 0 : 1.9 + rand() * 0.9;
+    const green = [0x3f7a3a, 0x4a8a3f, 0x356b32][i % 3];
+    P.add(new THREE.SphereGeometry(1.9 + rand() * 0.6, 10, 7).scale(1.25, 0.42, 1.25).translate(tx + Math.cos(a) * r, 5.2 + rand() * 0.5, tz + Math.sin(a) * r), green);
+  }
+  C.push({ x: tx, z: tz, hw: 1.3, hd: 1.3 });
+
+  // Benches facing the water, beside the tree.
+  const bench = (x: number, z: number) => {
+    P.box(1.7, 0.08, 0.45, x, 0.45, z, WOOD);
+    P.box(1.7, 0.4, 0.07, x, 0.72, z - 0.22, WOOD);
+    // A concrete body under the slats, as the seafront's benches are built.
+    P.box(1.5, 0.41, 0.4, x, 0.205, z, 0xcfc8b8);
+    C.push({ x, z, hw: 0.85, hd: 0.25 });
+  };
+  const benchZ = edge + 1.3;
+  for (let x = tx + 2.4; x < w / 2 - 1; x += 2.6) bench(x, benchZ);
+
+  // The seafood stalls along the street side: a table under a blue tarp on
+  // four poles, the catch on crushed ice (fish, prawns, a crab or two), a
+  // board with the day's prices, a plastic chair.
+  const stall = (x: number, z: number) => {
+    P.box(2.2, 0.08, 1.1, x, 0.85, z, 0x9aa3a8);
+    // A cloth hung all round the table, down to the paving.
+    for (const sz of [-1, 1]) P.box(2.2, 0.72, 0.03, x, 0.45, z + sz * 0.56, 0x1f5f8b);
+    for (const sx of [-1, 1]) P.box(0.03, 0.72, 1.1, x + sx * 1.1, 0.45, z, 0x1f5f8b);
+    for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) P.box(0.06, 0.85, 0.06, x + sx * 1.0, 0.42, z + sz * 0.48, IRON);
+    P.box(2.0, 0.1, 0.9, x, 0.94, z, 0xeef4f6); // ice
+    for (let k = 0; k < 7; k++) {
+      const fx = x - 0.8 + k * 0.27;
+      P.add(new THREE.SphereGeometry(0.12, 6, 4).scale(2.2, 0.45, 0.8).rotateY(rand() - 0.5).translate(fx, 1.02, z - 0.2 + rand() * 0.35), [0x9fb1bd, 0x7d8e9c, 0xc9a9a0][k % 3]);
     }
+    P.add(new THREE.SphereGeometry(0.16, 7, 4).scale(1.2, 0.5, 1).translate(x + 0.6, 1.04, z + 0.25), 0xc0392b); // a crab
+    for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) P.cyl(0.03, 0.03, 2.3, x + sx * 1.25, 1.15, z + sz * 0.8, 0x7a7f84, 5);
+    P.add(new THREE.BoxGeometry(2.8, 0.05, 2.0).rotateX(0.08).translate(x, 2.35, z), 0x2a6fb0); // tarp
+    P.box(0.7, 0.5, 0.04, x - 0.6, 1.4, z + 0.62, 0xf4efe4); // price board
+    P.box(0.45, 0.05, 0.45, x + 0.5, 0.45, z - 1.0, 0xc0392b); // chair
+    P.box(0.45, 0.45, 0.05, x + 0.5, 0.68, z - 1.2, 0xc0392b);
+    C.push({ x, z, hw: 1.1, hd: 0.55 });
+  };
+  const stallZ = d / 2 - 1.6;
+  const stalls = Math.max(1, Math.floor((w - 3) / 3.4));
+  for (let k = 0; k < stalls; k++) stall(-w / 2 + 1.8 + k * 3.4, stallZ);
+
+  // A tender-coconut cart: green nuts heaped on a handcart, the machete's block.
+  const cx = w / 2 - 1.4;
+  const cz = d * 0.05;
+  P.box(1.4, 0.1, 0.9, cx, 0.75, cz, WOOD);
+  for (const sx of [-0.55, 0.55]) P.add(new THREE.CylinderGeometry(0.32, 0.32, 0.08, 12).rotateX(Math.PI / 2).rotateY(Math.PI / 2).translate(cx + sx, 0.32, cz + 0.5), 0x3a3d42);
+  for (let k = 0; k < 9; k++) P.add(new THREE.SphereGeometry(0.17, 8, 6).scale(1, 1.15, 1).translate(cx - 0.45 + (k % 3) * 0.42, 0.95 + Math.floor(k / 3) * 0.14, cz - 0.25 + ((k * 7) % 3) * 0.22), k % 4 ? 0x5a8f2e : 0x7aa640);
+  P.box(0.3, 0.25, 0.3, cx + 0.55, 0.9, cz - 0.3, 0x6a4a2a);
+  // Underneath, a crate of more nuts and the cut husks.
+  P.box(1.3, 0.45, 0.85, cx, 0.23, cz, 0x7a5a36);
+  for (let k = 0; k < 4; k++) P.add(new THREE.SphereGeometry(0.15, 7, 5).translate(cx - 0.45 + k * 0.3, 0.5, cz - 0.1 + (k % 2) * 0.2), 0x6b5a2e);
+  C.push({ x: cx, z: cz, hw: 0.75, hd: 0.55 });
+
+  // Lamp posts: a fluted post, a lantern on top.
+  for (const [lx, lz] of [[w / 2 - 0.6, edge + 0.9], [-w / 2 + 0.6, d * 0.12]]) {
+    P.cyl(0.08, 0.12, 3.6, lx, 1.8, lz, 0x1f3b2e, 8);
+    P.cyl(0.18, 0.18, 0.2, lx, 0.1, lz, 0x1f3b2e, 8);
+    P.box(0.34, 0.45, 0.34, lx, 3.85, lz, 0xfff0c2);
+    P.cone(0.3, 0.25, lx, 4.2, lz, 0x1f3b2e, 4);
+    C.push({ x: lx, z: lz, hw: 0.15, hd: 0.15 });
   }
   return finish(P, C, []);
 }
-
-/** A statue on a stepped plinth, facing +z: a draped standing figure, one
- *  arm raised (Kannagi holds up her anklet). The Marina's row of statues. */
-export type StatuePose = "anklet" | "scholar" | "leader";
 
 /**
  * A bronze on a tiered granite pedestal, in one of the Marina's poses:
@@ -1103,51 +1425,148 @@ export type StatuePose = "anklet" | "scholar" | "leader";
  * book, a leader in uniform with a raised arm (Subhas Chandra Bose). The
  * pedestal carries a plaque and a railing round its foot.
  */
+/** A tapered limb (or robe, or strap) from `a` to `b`. */
+function limb(P: Parts, a: THREE.Vector3, b: THREE.Vector3, r0: number, r1: number, hex: number, seg = 8) {
+  const len = a.distanceTo(b);
+  const g = new THREE.CylinderGeometry(r1, r0, len, seg).translate(0, len / 2, 0);
+  g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize()));
+  P.add(g.translate(a.x, a.y, a.z), hex);
+}
+function ball(P: Parts, x: number, y: number, z: number, r: number, hex: number, sx = 1, sy = 1, sz = 1) {
+  P.add(new THREE.SphereGeometry(r, 12, 9).scale(sx, sy, sz).translate(x, y, z), hex);
+}
+
+/** A lotus: rings of petals round a cushion, the seat of a figure. */
+function lotus(P: Parts, y: number, r: number, hex: number) {
+  P.cyl(r * 0.8, r * 0.7, r * 0.3, 0, y + r * 0.15, 0, hex, 16);
+  for (const [ring, tilt] of [[1, 0.9], [0.8, 0.5]] as const) {
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2 + ring;
+      const g = new THREE.SphereGeometry(r * 0.3, 8, 6).scale(0.55, 1, 0.3).rotateX(-tilt).rotateY(-a + Math.PI / 2);
+      P.add(g.translate(Math.cos(a) * r * ring * 0.85, y + r * 0.25, Math.sin(a) * r * ring * 0.85), hex);
+    }
+  }
+}
+
+/** A statue on a pedestal inside a railed enclosure, facing +z. The Marina's
+ *  row of statues: Kannagi raising her anklet, Thiruvalluvar seated with his
+ *  palm-leaf book, Netaji Bose in uniform at the salute. Each figure bronze,
+ *  modelled in proportion (jointed limbs, drape, hair), on its own pedestal. */
+export type StatuePose = "anklet" | "scholar" | "leader";
+
 export function statue(w: number, d: number, pose: StatuePose = "anklet", figure = 0x5a4a3c, plinth = 0xd8d0c0): Monument {
   const P = new Parts();
   const s = Math.max(3.2, Math.min(w, d) + 1);
-  // Railing and the tiered pedestal.
-  P.box(s + 1.4, 0.3, s + 1.4, 0, 0.15, 0, 0xc9c1b0);
-  for (let k = 0; k < 16; k++) {
+  const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+  const HI = 0x7a6450; // the bronze's worn highlights
+  const GILT = 0xc9a44a;
+  // The enclosure: a low plinth wall, stone pillars at the corners, iron railings on it.
+  const e = (s + 1.2) / 2;
+  P.box(s + 1.4, 0.45, s + 1.4, 0, 0.225, 0, 0xc9c1b0);
+  for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+    P.box(0.34, 1.15, 0.34, x * e, 0.58, z * e, 0xd8d0c0);
+    P.box(0.42, 0.1, 0.42, x * e, 1.2, z * e, 0xc4bba8);
+  }
+  for (let k = 1; k < 15; k++) {
     const t = -1 + (k / 15) * 2;
-    for (const [x, z] of [[t, 1], [t, -1], [1, t], [-1, t]]) P.box(0.06, 0.8, 0.06, (x * (s + 1.2)) / 2, 0.7, (z * (s + 1.2)) / 2, 0x2e3a33);
+    for (const [x, z] of [[t, 1], [t, -1], [1, t], [-1, t]]) P.box(0.05, 0.7, 0.05, x * e, 0.8, z * e, 0x2e3a33);
   }
   for (const [x, z, lw, ld] of [[0, 1, s + 1.2, 0], [0, -1, s + 1.2, 0], [1, 0, 0, s + 1.2], [-1, 0, 0, s + 1.2]] as const) {
-    P.box(lw || 0.08, 0.08, ld || 0.08, (x * (s + 1.2)) / 2, 1.1, (z * (s + 1.2)) / 2, 0x2e3a33);
+    for (const yy of [0.55, 1.1]) P.box(lw || 0.06, 0.06, ld || 0.06, x * e, yy, z * e, 0x2e3a33);
   }
-  P.box(s, 0.6, s, 0, 0.6, 0, plinth);
-  P.box(s * 0.78, 0.5, s * 0.78, 0, 1.15, 0, plinth);
-  P.box(s * 0.56, 3, s * 0.56, 0, 2.9, 0, plinth);
-  P.box(s * 0.64, 0.25, s * 0.64, 0, 4.5, 0, 0xc4bba8);
-  P.box(s * 0.34, 0.9, 0.06, 0, 2.9, s * 0.28 + 0.03, 0x6b5a3a);
-  const y = 4.6;
-  const H = 3.6;
+
+  // The pedestal: its own for each.
+  let y: number;
   if (pose === "scholar") {
-    // Seated-standing sage: flowing robe, beard, a book held at the chest.
-    P.cyl(0.55, 0.85, H * 0.62, 0, y + H * 0.31, 0, figure, 12);
-    P.cyl(0.45, 0.55, H * 0.22, 0, y + H * 0.73, 0, figure, 12);
-    P.add(new THREE.SphereGeometry(0.34, 10, 8).translate(0, y + H * 0.93, 0), figure);
-    P.add(new THREE.ConeGeometry(0.22, 0.45, 8).rotateX(Math.PI).translate(0, y + H * 0.8, 0.22), figure);
-    P.box(0.5, 0.36, 0.08, 0, y + H * 0.68, 0.5, 0x8a7550);
-    for (const sx of [-1, 1]) P.add(new THREE.BoxGeometry(0.18, 0.9, 0.18).rotateX(-0.9).translate(sx * 0.35, y + H * 0.68, 0.3), figure);
+    // Broad and low, a carved band, the lotus on top.
+    P.box(s, 0.5, s, 0, 0.55, 0, plinth);
+    P.box(s * 0.82, 1.8, s * 0.82, 0, 1.7, 0, plinth);
+    P.box(s * 0.86, 0.25, s * 0.86, 0, 2.2, 0, 0xc4bba8);
+    P.box(s * 0.9, 0.3, s * 0.9, 0, 2.75, 0, plinth);
+    P.box(s * 0.4, 0.6, 0.06, 0, 1.5, s * 0.41 + 0.03, 0x6b5a3a);
+    y = 2.9;
+    lotus(P, y, s * 0.36, figure);
+    y += s * 0.2;
   } else if (pose === "leader") {
-    // In uniform: trousers, tunic, cap, one arm raised forward.
-    for (const sx of [-1, 1]) P.box(0.3, H * 0.45, 0.32, sx * 0.2, y + H * 0.225, 0, figure);
-    P.box(0.8, H * 0.35, 0.5, 0, y + H * 0.62, 0, figure);
-    P.box(0.86, 0.1, 0.56, 0, y + H * 0.48, 0, 0x3a2e24);
-    P.add(new THREE.SphereGeometry(0.28, 10, 8).translate(0, y + H * 0.88, 0), figure);
-    P.cyl(0.3, 0.3, 0.16, 0, y + H * 0.96, 0, figure, 10);
-    P.box(0.18, 0.9, 0.18, -0.5, y + H * 0.6, 0, figure);
-    P.add(new THREE.BoxGeometry(0.18, 1.1, 0.18).rotateX(-1.2).translate(0.5, y + H * 0.8, 0.4), figure);
+    // Steps up to a tall shaft with an inscription and a moulded cap.
+    P.box(s, 0.35, s, 0, 0.475, 0, plinth);
+    P.box(s * 0.85, 0.35, s * 0.85, 0, 0.825, 0, plinth);
+    P.box(s * 0.6, 3.2, s * 0.6, 0, 2.6, 0, plinth);
+    P.box(s * 0.66, 0.3, s * 0.66, 0, 4.35, 0, 0xc4bba8);
+    P.box(s * 0.44, 1.1, 0.06, 0, 2.6, s * 0.3 + 0.03, 0x6b5a3a);
+    P.box(s * 0.3, 0.12, 0.07, 0, 3.4, s * 0.3 + 0.04, GILT);
+    y = 4.5;
   } else {
-    // Kannagi: sari to the ankle, hair loose, the anklet raised high.
-    P.cyl(0.36, 0.7, H * 0.66, 0, y + H * 0.33, 0, figure, 12);
-    P.cyl(0.3, 0.36, H * 0.2, 0, y + H * 0.76, 0, figure, 12);
-    P.add(new THREE.SphereGeometry(0.26, 10, 8).translate(0, y + H * 0.93, 0), figure);
-    P.add(new THREE.ConeGeometry(0.3, 1.1, 8).rotateX(Math.PI).translate(0, y + H * 0.78, -0.2), figure);
-    P.box(0.16, 1.1, 0.16, -0.42, y + H * 0.62, 0, figure);
-    P.add(new THREE.BoxGeometry(0.16, 1.3, 0.16).rotateZ(-0.35).translate(0.5, y + H * 0.98, 0), figure);
-    P.add(new THREE.TorusGeometry(0.18, 0.05, 6, 14).translate(0.72, y + H * 1.16, 0), 0xc9a44a);
+    // Tiered, then a tall shaft, a lotus under her feet.
+    P.box(s, 0.6, s, 0, 0.6, 0, plinth);
+    P.box(s * 0.78, 0.5, s * 0.78, 0, 1.15, 0, plinth);
+    P.box(s * 0.56, 3, s * 0.56, 0, 2.9, 0, plinth);
+    P.box(s * 0.64, 0.25, s * 0.64, 0, 4.5, 0, 0xc4bba8);
+    P.box(s * 0.34, 0.9, 0.06, 0, 2.9, s * 0.28 + 0.03, 0x6b5a3a);
+    y = 4.62;
+    lotus(P, y, 0.7, figure);
+    y += 0.3;
+  }
+
+  const k = 1.25; // over life size, as monuments are
+  const at = (x: number, yy: number, z: number) => V(x * k, y + yy * k, z * k);
+  if (pose === "scholar") {
+    // Seated cross-legged: the folded legs, the robe falling over them.
+    ball(P, 0, y + 0.22 * k, 0.05 * k, 0.55 * k, figure, 1.35, 0.42, 0.95);
+    for (const sx of [-1, 1]) ball(P, sx * 0.34 * k, y + 0.2 * k, 0.4 * k, 0.16 * k, figure, 1.2, 0.7, 1);
+    limb(P, at(0, 0.35, 0), at(0, 1.15, -0.02), 0.36 * k, 0.3 * k, figure, 12);
+    ball(P, 0, y + 1.12 * k, 0.02 * k, 0.32 * k, figure, 1.25, 0.6, 0.85); // shoulders
+    limb(P, at(-0.28, 1.15, 0.05), at(0.3, 0.45, 0.2), 0.08 * k, 0.1 * k, HI); // the shawl across
+    limb(P, at(0, 1.2, 0), at(0, 1.35, 0), 0.1 * k, 0.09 * k, figure);
+    ball(P, 0, y + 1.5 * k, 0, 0.19 * k, figure, 0.95, 1.1, 1);
+    ball(P, 0, y + 1.74 * k, -0.02 * k, 0.1 * k, figure, 1, 0.9, 1); // hair knot
+    P.add(new THREE.ConeGeometry(0.13 * k, 0.32 * k, 8).rotateX(Math.PI).translate(0, y + 1.3 * k, 0.1 * k), figure); // beard
+    // Left hand holds the palm-leaf book in the lap; the right raised at the chest, teaching.
+    limb(P, at(-0.34, 1.08, 0), at(-0.36, 0.72, 0.18), 0.08 * k, 0.07 * k, figure);
+    limb(P, at(-0.36, 0.72, 0.18), at(-0.12, 0.62, 0.42), 0.07 * k, 0.06 * k, figure);
+    P.add(new THREE.BoxGeometry(0.55 * k, 0.05 * k, 0.12 * k).rotateY(0.3).translate(-0.05 * k, y + 0.62 * k, 0.45 * k), HI);
+    limb(P, at(0.34, 1.08, 0), at(0.4, 0.74, 0.2), 0.08 * k, 0.07 * k, figure);
+    limb(P, at(0.4, 0.74, 0.2), at(0.3, 1.02, 0.36), 0.07 * k, 0.06 * k, figure);
+    ball(P, 0.3 * k, y + 1.06 * k, 0.38 * k, 0.06 * k, figure);
+  } else if (pose === "leader") {
+    // Boots, breeches, the tunic belted with a strap across, the peaked cap; the salute.
+    for (const sx of [-1, 1]) {
+      P.box(0.16 * k, 0.12 * k, 0.3 * k, sx * 0.13 * k, y + 0.06 * k, 0.04 * k, 0x2a211a);
+      limb(P, at(sx * 0.13, 0.05, 0), at(sx * 0.13, 0.5, 0), 0.085 * k, 0.09 * k, 0x2a211a); // boot
+      limb(P, at(sx * 0.13, 0.5, 0), at(sx * 0.12, 0.98, 0), 0.09 * k, 0.12 * k, figure);
+    }
+    limb(P, at(0, 0.95, 0), at(0, 1.5, 0), 0.23 * k, 0.26 * k, figure, 12);
+    ball(P, 0, y + 1.5 * k, 0, 0.27 * k, figure, 1.25, 0.55, 0.8);
+    P.cyl(0.25 * k, 0.25 * k, 0.07 * k, 0, y + 1.0 * k, 0, 0x2a211a, 12); // belt
+    limb(P, at(-0.2, 1.52, 0.1), at(0.2, 1.0, 0.18), 0.025 * k, 0.025 * k, 0x2a211a); // cross strap
+    limb(P, at(0, 1.55, 0), at(0, 1.66, 0), 0.08 * k, 0.075 * k, figure);
+    ball(P, 0, y + 1.8 * k, 0.01 * k, 0.15 * k, figure, 0.95, 1.08, 1);
+    P.cyl(0.16 * k, 0.15 * k, 0.12 * k, 0, y + 1.96 * k, 0, figure, 12); // cap
+    P.add(new THREE.CylinderGeometry(0.1 * k, 0.1 * k, 0.02 * k, 10).scale(1, 1, 0.7).translate(0, y + 1.9 * k, 0.14 * k), 0x2a211a); // peak
+    for (const gx of [-0.055, 0.055]) ball(P, gx * k, y + 1.82 * k, 0.13 * k, 0.035 * k, HI); // spectacles
+    // Left arm at the side; right up in the salute, fingers to the cap.
+    limb(P, at(-0.32, 1.48, 0), at(-0.36, 1.12, 0.02), 0.07 * k, 0.065 * k, figure);
+    limb(P, at(-0.36, 1.12, 0.02), at(-0.36, 0.82, 0.06), 0.065 * k, 0.055 * k, figure);
+    limb(P, at(0.32, 1.48, 0), at(0.55, 1.62, 0.12), 0.07 * k, 0.065 * k, figure);
+    limb(P, at(0.55, 1.62, 0.12), at(0.16, 1.9, 0.14), 0.065 * k, 0.05 * k, figure);
+  } else {
+    // Kannagi: the sari flaring to her feet, the drape over her left
+    // shoulder, hair loose down her back, the anklet raised in her right hand.
+    for (const sx of [-1, 1]) P.box(0.12 * k, 0.07 * k, 0.24 * k, sx * 0.1 * k, y + 0.04 * k, 0.12 * k, figure);
+    limb(P, at(0, 0.05, 0), at(0, 1.02, 0), 0.4 * k, 0.24 * k, figure, 14);
+    limb(P, at(0, 1.0, 0), at(0, 1.42, 0), 0.2 * k, 0.21 * k, figure, 12);
+    ball(P, 0, y + 1.3 * k, 0.07 * k, 0.17 * k, figure, 1.3, 0.8, 0.9); // bust
+    ball(P, 0, y + 1.44 * k, 0, 0.22 * k, figure, 1.2, 0.5, 0.8); // shoulders
+    limb(P, at(0.22, 0.8, 0.16), at(-0.2, 1.46, 0.08), 0.1 * k, 0.07 * k, HI); // the pallu across
+    limb(P, at(-0.2, 1.46, -0.02), at(-0.24, 0.7, -0.22), 0.1 * k, 0.16 * k, HI); // falling behind
+    limb(P, at(0, 1.48, 0), at(0, 1.58, 0), 0.07 * k, 0.065 * k, figure);
+    ball(P, 0, y + 1.7 * k, 0.01 * k, 0.13 * k, figure, 0.9, 1.08, 1);
+    limb(P, at(0, 1.72, -0.08), at(0, 1.05, -0.2), 0.14 * k, 0.09 * k, figure); // loose hair
+    limb(P, at(-0.25, 1.42, 0), at(-0.3, 1.08, 0.06), 0.06 * k, 0.055 * k, figure);
+    limb(P, at(-0.3, 1.08, 0.06), at(-0.26, 0.82, 0.14), 0.055 * k, 0.045 * k, figure);
+    limb(P, at(0.25, 1.44, 0), at(0.42, 1.78, 0.04), 0.06 * k, 0.055 * k, figure);
+    limb(P, at(0.42, 1.78, 0.04), at(0.46, 2.16, 0.06), 0.055 * k, 0.045 * k, figure);
+    P.add(new THREE.TorusGeometry(0.11 * k, 0.03 * k, 6, 14).translate(0.47 * k, y + 2.3 * k, 0.06 * k), GILT);
   }
   return finish(P, [{ x: 0, z: 0, hw: (s + 1.4) / 2, hd: (s + 1.4) / 2 }], []);
 }

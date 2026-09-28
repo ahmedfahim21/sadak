@@ -138,73 +138,137 @@ export function makeCharminar(mats?: AssetMaterialLib, seed = 11): THREE.Group {
 }
 
 /* ------------------------------------------------------------------ *
- * Kochi — cantilevered Chinese fishing net. Nothing else in India looks
- * remotely like it. ~9m tall, ~11m long.
+ * Kochi — the cantilevered Chinese fishing net (cheena vala), in the
+ * model's frame with the shore at -z and the sea at +z: a timber gantry on
+ * a laterite footing, a long boom pivoting on it and tipped out over the
+ * water, held by ropes from a short king post, the shore end weighed down
+ * by stones slung on ropes; at the sea end four bamboo spars arch out and
+ * down from the tip, and the square net sags between their ends. ~9m tall,
+ * ~19m from the counterweight to the net's far edge.
  * ------------------------------------------------------------------ */
+
+/** A round pole (or rope) from `a` to `b`. */
+function spar(a: THREE.Vector3, b: THREE.Vector3, r0: number, r1 = r0, radial = 6): THREE.BufferGeometry {
+  const len = a.distanceTo(b);
+  const g = new THREE.CylinderGeometry(r1, r0, len, radial);
+  g.translate(0, len / 2, 0);
+  g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), b.clone().sub(a).normalize()));
+  g.translate(a.x, a.y, a.z);
+  return g;
+}
+
+/** A bent pole along a curve (the net's bamboo spars bow under the net's weight). */
+function bentSpar(points: THREE.Vector3[], r: number): THREE.BufferGeometry {
+  return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points), 12, r, 5, false);
+}
+
+/** The net's mesh as an alpha map: cords opaque, the gaps nearly clear. Data,
+ *  not a canvas, so it builds outside a browser too (the tests). */
+let netMeshTexture: THREE.DataTexture | null = null;
+function netMesh(): THREE.DataTexture {
+  if (netMeshTexture) return netMeshTexture;
+  const n = 32;
+  const data = new Uint8Array(n * n * 4);
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) {
+      // Two cords each way per tile, two texels thick.
+      const cord = x % 16 < 2 || y % 16 < 2;
+      const v = cord ? 255 : 28;
+      data.set([v, v, v, 255], (y * n + x) * 4);
+    }
+  }
+  const t = new THREE.DataTexture(data, n, n);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.generateMipmaps = true;
+  t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.magFilter = THREE.LinearFilter;
+  t.needsUpdate = true;
+  netMeshTexture = t;
+  return t;
+}
+
 export function makeChineseFishingNet(mats?: AssetMaterialLib, seed = 12): THREE.Group {
   const rand = mulberry32(seed);
   const timber = stdMat(TEAK, { roughness: 0.9 }, mats);
   const dark = stdMat(TEAK_DK, { roughness: 0.92 }, mats);
+  const bamboo = stdMat(0xb89a62, { roughness: 0.85 }, mats);
   const rope = stdMat(0xcfc0a0, { roughness: 0.95 }, mats);
-  const netMat = stdMat(0x8a7f66, { roughness: 0.95 }, mats);
-
+  const stone = stdMat(0x9a5a3c, { roughness: 1 }, mats); // laterite
+  // The net: pale cord in a square mesh, the sea seen through it; far off
+  // the mipmaps blur it to a haze rather than a flicker of lines.
+  const netMat = stdMat(0xd8d2c0, { roughness: 1, side: THREE.DoubleSide, transparent: true, depthWrite: false, alphaMap: netMesh() }, mats);
+  const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
   const parts: Part[] = [];
 
-  // A-frame gantry on the bank.
-  for (const s of [-1, 1]) {
-    parts.push({ geo: bakedCyl(0.13, 0.17, 8.4, 6, s * 1.5, 4.2, 0, 0, s * -0.14), mat: timber });
-    parts.push({ geo: bakedCyl(0.11, 0.14, 6.0, 6, s * 1.5, 3.0, -2.6, 0.42, 0), mat: timber });
-  }
-  // Cross-bracing.
-  parts.push({ geo: bakedBox(3.4, 0.16, 0.16, 0, 2.4, 0), mat: dark });
-  parts.push({ geo: bakedBox(3.2, 0.16, 0.16, 0, 5.4, 0), mat: dark });
-
-  // The long cantilever arm reaching out over the water.
-  parts.push({ geo: bakedCyl(0.1, 0.16, 10.5, 6, 0, 6.6, 4.4, 0.26, 0), mat: timber });
-  // Counterweight tail: a run of stones hung on short ropes.
-  parts.push({ geo: bakedCyl(0.1, 0.13, 3.6, 6, 0, 7.4, -1.9, -0.3, 0), mat: timber });
-  for (let i = 0; i < 4; i++) {
-    const z = -1.0 - i * 0.65;
-    parts.push({ geo: bakedCyl(0.03, 0.03, 1.1, 4, 0.25, 7.0 - i * 0.2, z), mat: rope });
-    parts.push({ geo: bakedSphere(0.26, 0.25, 6.4 - i * 0.2, z, { wSeg: 6, hSeg: 5 }), mat: dark });
-  }
-
-  // Net: four spreader poles from the arm tip down to a square mouth, with a
-  // slack mesh suggested by a shallow inverted pyramid.
-  const tipY = 4.4;
-  const tipZ = 9.4;
-  const mouth = 3.0;
+  // The footing: a laterite block the gantry stands on (what the player bumps into).
+  parts.push({ geo: bakedBox(2.7, 0.45, 2.3, 0, 0.225, 0), mat: stone });
+  // The gantry: two A-frames, their feet on the footing's corners, meeting
+  // at the axle the boom pivots on.
+  // High enough that the stones slung off the shore end clear a head.
+  const pivot = V(0, 4.3, 0);
   for (const sx of [-1, 1]) {
-    for (const sz of [-1, 1]) {
-      parts.push({
-        geo: bakedCyl(
-          0.05,
-          0.07,
-          4.4,
-          4,
-          (sx * mouth) / 2,
-          tipY - 1.4,
-          tipZ + (sz * mouth) / 2,
-          0,
-          0
-        ),
-        mat: timber,
-      });
-    }
+    for (const sz of [-1, 1]) parts.push({ geo: spar(V(sx * 1.15, 0.45, sz * 0.95), V(sx * 0.42, pivot.y, 0), 0.13, 0.1), mat: timber });
+    parts.push({ geo: spar(V(sx * 0.95, 1.6, -0.62), V(sx * 0.95, 1.6, 0.62), 0.07), mat: dark }); // brace
   }
-  parts.push({
-    geo: bakedCone(mouth * 0.78, 1.9, 4, 0, tipY - 3.5, tipZ, Math.PI, 0),
-    mat: netMat,
-  });
-  // Hoist ropes from the arm down to the net corners.
-  for (const sx of [-1, 1]) {
-    parts.push({
-      geo: bakedCyl(0.025, 0.025, 2.6, 4, (sx * mouth) / 2, tipY + 0.6, tipZ, 0, sx * 0.12),
-      mat: rope,
-    });
+  parts.push({ geo: bakedCyl(0.09, 0.09, 1.2, 8, 0, pivot.y, 0, 0, Math.PI / 2), mat: dark }); // axle
+
+  // The boom: one long timber through the pivot, its shore end low and
+  // weighted, its sea end up over the water. It rocks a little per net.
+  const tilt = 0.14 + (rand() - 0.5) * 0.05;
+  const along = (d: number) => V(0, pivot.y + d * tilt, d);
+  const tail = along(-4.4);
+  const tip = along(11);
+  parts.push({ geo: spar(tail, tip, 0.17, 0.1, 8), mat: timber });
+  // A second, lighter pole lashed alongside the outer half, as the booms are built up.
+  parts.push({ geo: spar(along(1.5).add(V(0.18, 0.05, 0)), along(9.5).add(V(0.18, 0.05, 0)), 0.07), mat: timber });
+  for (const d of [3, 5.5, 8]) parts.push({ geo: bakedTorus(0.2, 0.035, along(d).x + 0.08, along(d).y, along(d).z), mat: rope });
+
+  // The king post over the pivot, and its stays out to the tip and back to the tail.
+  const post = V(0, pivot.y + 4.1, 0.2);
+  parts.push({ geo: spar(pivot, post, 0.09, 0.07), mat: timber });
+  parts.push({ geo: spar(post, tip, 0.025), mat: rope });
+  parts.push({ geo: spar(post, along(6), 0.02), mat: rope });
+  parts.push({ geo: spar(post, tail, 0.025), mat: rope });
+
+  // The counterweight: laterite stones slung on ropes from the shore end,
+  // high enough to walk under.
+  for (let i = 0; i < 5; i++) {
+    const d = -1.6 - i * 0.65;
+    const at = along(d);
+    const drop = 0.3 + rand() * 0.3;
+    parts.push({ geo: spar(at, V(0.1 * (i % 2 ? 1 : -1), at.y - drop, at.z), 0.02), mat: rope });
+    parts.push({ geo: bakedSphere(0.24 + rand() * 0.06, 0.1 * (i % 2 ? 1 : -1), at.y - drop - 0.2, at.z, { wSeg: 6, hSeg: 5, sy: 0.8 }), mat: stone });
   }
 
-  void rand;
+  // The net's frame: four bamboo spars bowing out and down from the tip to
+  // the corners of the net, and the square net sagging between them.
+  const half = 3.6;
+  // Being lifted out: its belly just clear of the water.
+  const netY = 1.1;
+  const corners = [V(-half, netY, tip.z - half), V(half, netY, tip.z - half), V(half, netY, tip.z + half), V(-half, netY, tip.z + half)];
+  for (const c of corners) {
+    const mid = tip.clone().lerp(c, 0.5).add(V(0, 0.9, 0));
+    parts.push({ geo: bentSpar([tip, mid, c], 0.055), mat: bamboo });
+    // A line from each corner up to the tip, and the net's edge ropes.
+    parts.push({ geo: spar(c, tip, 0.015), mat: rope });
+  }
+  for (let i = 0; i < 4; i++) parts.push({ geo: spar(corners[i], corners[(i + 1) % 4], 0.02), mat: rope });
+  // The net: a grid pulled down in the middle by its own weight.
+  const net = new THREE.PlaneGeometry(half * 2, half * 2, 10, 10).rotateX(-Math.PI / 2);
+  // Some fourteen meshes across (the texture holds two).
+  const uv = net.attributes.uv;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 7, uv.getY(i) * 7);
+  const pos = net.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const u = pos.getX(i) / half;
+    const w = pos.getZ(i) / half;
+    const sag = 1.2 * (1 - u * u) * (1 - w * w);
+    pos.setY(i, netY - sag);
+  }
+  net.computeVertexNormals();
+  net.translate(0, 0, tip.z);
+  parts.push({ geo: net, mat: netMat });
+
   const g = mergeByMaterial(parts);
   g.name = "kochi-fishing-net";
   return g;

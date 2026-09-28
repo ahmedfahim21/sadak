@@ -186,6 +186,8 @@ type Person = {
   height: number;
   costume: Costume;
   mover: Mover;
+  /** Placed afresh (out of sight): go straight there instead of easing. */
+  snap?: boolean;
 };
 
 export type CrowdOpts = {
@@ -208,6 +210,8 @@ export type Crowd = {
   /** Scatter walkers round `focus`. */
   prime(focus: THREE.Vector3): void;
   update(dt: number, focus: THREE.Vector3): void;
+  /** How many people within `r` of (x, z): the murmur's loudness. */
+  near(x: number, z: number, r: number): number;
   dispose(): void;
 };
 
@@ -225,7 +229,11 @@ function pickWeighted<T>(items: readonly T[], weights: readonly number[], r: num
 }
 
 const LIVE_RADIUS = 150;
-const SPAWN_MIN = 60;
+/** Recycled walkers come back in past the haze and the buildings, never in
+ *  plain sight of the player (60m put them popping up down an open street). */
+export const SPAWN_MIN = 95;
+/** How much faster than their walk someone closes on their line (a corner). */
+const CATCH_UP = 0.7;
 const SPAWN_MAX = 140;
 
 /** Where a pedestrian walks across this road: on the footpath where there is
@@ -299,6 +307,7 @@ export function createCrowd(opts: CrowdOpts): Crowd {
       m.dir = dir;
       m.p = pp;
       m.off = walkOffset(road.r, rand() < 0.5 ? 1 : -1, rand);
+      p.snap = true;
       return;
     }
   };
@@ -489,19 +498,22 @@ export function createCrowd(opts: CrowdOpts): Crowd {
     const node = m.dir === 1 ? road.r.b : road.r.a;
     const options = net.at(node).filter((ri) => ri !== m.road);
     if (!options.length) {
-      // Dead end: turn round.
+      // Dead end: turn round, on the same side (flipping `dir` keeps the
+      // same footpath; flipping `off` too sent them across the road).
       m.dir = (-m.dir) as 1 | -1;
       m.p = 0;
-      m.off = -m.off;
       return;
     }
     const ri = options[Math.floor(rand() * options.length)];
     const next = net.roads[ri].r;
+    // Keep to the same side of the street, as people do at a corner: the
+    // side of travel, not of the road's own drawing direction (a road drawn
+    // the other way round flipped them across to the far footpath).
+    const leftOfTravel: 1 | -1 = m.off * m.dir >= 0 ? 1 : -1;
     m.road = ri;
     m.dir = next.a === node ? 1 : -1;
     m.p = 0;
-    // Keep to the same side of the street, as people do at a corner.
-    m.off = walkOffset(next, m.off >= 0 ? 1 : -1, rand);
+    m.off = walkOffset(next, (leftOfTravel * m.dir) as 1 | -1, rand);
   }
 
   function step(p: Person, dt: number) {
@@ -515,8 +527,31 @@ export function createCrowd(opts: CrowdOpts): Crowd {
     // Left of travel in a +x east, +z south frame; `off` is measured left of
     // the road's own a->b direction, so flip it when walking b->a.
     const o = m.off * m.dir;
-    p.x = s.x + s.dz * o;
-    p.z = s.z - s.dx * o;
+    const tx = s.x + s.dz * o;
+    const tz = s.z - s.dx * o;
+    if (p.snap !== false) {
+      p.x = tx;
+      p.z = tz;
+      p.snap = false;
+    } else {
+      // Walked onto the path, so a corner (where one street's footpath line
+      // meets the next) is cut across at a walk, not a hop or a dash: an
+      // easing proportional to the gap sent them off at 7m/s and more.
+      const gx = tx - p.x;
+      const gz = tz - p.z;
+      const gap = Math.hypot(gx, gz);
+      const most = (p.speed + CATCH_UP) * dt;
+      const k = gap > most ? most / gap : 1;
+      p.x += gx * k;
+      p.z += gz * k;
+      // Facing the way they're going while they cut across.
+      if (gap > 0.5) {
+        let d = Math.atan2(gx, gz) - p.yaw;
+        d = Math.atan2(Math.sin(d), Math.cos(d));
+        p.yaw += d * Math.min(1, dt * 6);
+        return;
+      }
+    }
     const yaw = Math.atan2(s.dx, s.dz);
     let d = yaw - p.yaw;
     d = Math.atan2(Math.sin(d), Math.cos(d));
@@ -549,6 +584,11 @@ export function createCrowd(opts: CrowdOpts): Crowd {
         pose(i);
       }
       for (const name of PARTS) meshes[name].instanceMatrix.needsUpdate = true;
+    },
+    near(x, z, r) {
+      let n = 0;
+      for (const p of people) if (Math.abs(p.x - x) < r && Math.abs(p.z - z) < r && Math.hypot(p.x - x, p.z - z) < r) n++;
+      return n;
     },
     dispose() {
       for (const name of PARTS) {

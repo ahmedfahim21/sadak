@@ -507,6 +507,18 @@ export const HELD = {
     formants: [],
     lowpass: 2400, attack: 0.02, release: 0.05, vibrato: [0, 0], fixed: true, tremolo: [4.6, 0.07], level: 0.67,
   },
+  // Voices for the streets' sound, not the music: a temple chant or kirtan
+  // on "o", and a muezzin's open "a", wide vibrato.
+  chant: {
+    waves: [{ type: "sawtooth", ratio: 1, gain: 1 }],
+    formants: [[450, 5, 1], [800, 6, 0.6], [2830, 7, 0.15]],
+    lowpass: 2600, attack: 0.12, release: 0.25, vibrato: [5.2, 0.006], breath: 0.01, level: 0.5,
+  },
+  azaan: {
+    waves: [{ type: "sawtooth", ratio: 1, gain: 1 }],
+    formants: [[760, 5, 1], [1250, 6, 0.7], [2600, 7, 0.3]],
+    lowpass: 3200, attack: 0.1, release: 0.4, vibrato: [5.6, 0.012], breath: 0.012, level: 0.5,
+  },
 } satisfies Record<string, HeldPreset>;
 export type HeldName = keyof typeof HELD;
 

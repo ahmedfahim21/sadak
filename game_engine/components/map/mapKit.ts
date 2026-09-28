@@ -313,3 +313,11 @@ export function taskLook(t: { kind: TaskKind; role: string; title: string }, cit
   }
   return { icon: kindIcon(t.kind), label: kindLabel(t.kind) };
 }
+
+/** A spot the player marked on the full map to head for. */
+export type Waypoint = { x: number; z: number };
+
+/** Every monument's way in: the foot of its main stair or gate. */
+export function entrances(map: MapData): Pt[] {
+  return map.landmarks.flatMap((l) => (l.door ? [l.door] : []));
+}

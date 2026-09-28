@@ -25,8 +25,12 @@ import { flatPolygon } from "./areas";
 import type { CollisionWorld } from "./collide";
 
 const TILE = 48;
-const NEAR = 105;
-const FAR = NEAR + 45;
+/** How far round the player buildings are drawn in full; beyond, they're
+ *  massing boxes. A still from the game (the city covers) raises it so a
+ *  long view is built all the way out. */
+export const DETAIL = { near: 105 };
+/** Dropped back to boxes this much further out than they're built. */
+const HYSTERESIS = 45;
 /** Detail generation budget per frame, milliseconds. */
 const BUDGET_MS = 4;
 
@@ -399,12 +403,17 @@ export function buildBuildings(
     return t;
   };
 
-  // Far geometry per tile, plus colliders for everything.
+  // Far geometry per tile, plus colliders for everything. Only plots on a
+  // street front get detail up close, so only they are swapped out: the
+  // plots behind them (lanes, courtyards) keep their far block for good.
+  // Hiding those with the rest left their colliders standing on nothing.
   const farBufs = new Map<Tile, Buf>();
+  const backBufs = new Map<Tile, Buf>();
   for (const p of map.plots) {
     const t = tileOf(p.x, p.z);
-    if (!farBufs.has(t)) farBufs.set(t, newBuf());
-    farPlot(farBufs.get(t)!, p, theme);
+    const bufs = p.front ? farBufs : backBufs;
+    if (!bufs.has(t)) bufs.set(t, newBuf());
+    farPlot(bufs.get(t)!, p, theme);
     if (p.front) t.plots.push(p);
     collide.box(p.x, p.z, p.w / 2, p.d / 2, p.rot);
   }
@@ -415,6 +424,14 @@ export function buildBuildings(
     m.castShadow = true;
     m.receiveShadow = true;
     t.far = m;
+    group.add(m);
+  }
+  for (const b of backBufs.values()) {
+    const g = bufGeometry(b);
+    if (!g) continue;
+    const m = new THREE.Mesh(g, farMat);
+    m.castShadow = true;
+    m.receiveShadow = true;
     group.add(m);
   }
 
@@ -555,10 +572,10 @@ export function buildBuildings(
     const start = performance.now();
     const dist = (t: Tile) => Math.hypot(t.cx - focus.x, t.cz - focus.z);
     for (const t of list) {
-      if (t.state !== "far" && dist(t) > FAR) drop(t);
+      if (t.state !== "far" && dist(t) > DETAIL.near + HYSTERESIS) drop(t);
     }
     const wanted = list
-      .filter((t) => t.state !== "near" && dist(t) < NEAR)
+      .filter((t) => t.state !== "near" && dist(t) < DETAIL.near)
       .sort((a, b) => dist(a) - dist(b));
     for (const t of wanted) {
       t.state = "building";

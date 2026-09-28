@@ -13,6 +13,8 @@ import * as THREE from "three";
 import type { Landmark } from "../assets";
 import {
   makeArtDecoCinema,
+  makeSingleScreenCinema,
+  singleScreenCinemaSolids,
   makeChineseFishingNet,
   makeStreetMandir,
 } from "../assets";
@@ -39,6 +41,8 @@ import {
   promenade,
   smallMosque,
   temple,
+  gurjaraTemple,
+  waysideShrine,
   tomb,
   type Monument,
   type MosqueStyle,
@@ -106,16 +110,26 @@ function fit(model: THREE.Group, w: number, d: number, maxScale = 3, solids?: So
 
 
 /** The cinema's hall (makeArtDecoCinema: a 9 x 6m block and the 3m-radius
- *  Deco curve at its west end, stepped in two boxes inside the curve); the
- *  forecourt under the marquee, out to its front posts, is open. */
+ *  Deco curve at its west end, stepped in three boxes that stay inside the
+ *  curve: at half-heights 1, 2 and 2.6 the wall is at x = -4.5 - sqrt(9 - z²));
+ *  the forecourt under the marquee, out to its front posts, is open. Boxes
+ *  reaching past the curve were walls of air at its shoulders. */
 const CINEMA_HALL: Solid[] = [
-  [-4.5, -3.0, 4.5, 3.2],
-  [-7.4, -1.5, -4.5, 1.5],
-  [-6.8, -2.6, -4.5, 2.6],
+  [-4.5, -3.0, 4.5, 3.0],
+  [-7.33, -1, -4.5, 1],
+  [-6.74, -2, -4.5, 2],
+  [-6.0, -2.6, -4.5, 2.6],
 ];
 
-/** Builds the model for one landmark, in its local frame. */
-export function buildLandmark(l: MapLandmark, city: Landmark, clear?: ClearTest): Monument {
+/** What of a Chinese fishing net stands at body height (makeChineseFishingNet,
+ *  its own frame): the laterite footing its gantry stands on. The stones
+ *  hang high enough to walk under; the boom and the net are overhead or out
+ *  over the water, which blocks on its own. */
+const FISHING_NET_GROUND: Solid[] = [[-1.35, -1.15, 1.35, 1.15]];
+
+/** `variant`: which of the district's landmarks of this model it is (0, 1, ...),
+ *  so a row of them (Majestic's cinemas) doesn't repeat. */
+export function buildLandmark(l: MapLandmark, city: Landmark, clear?: ClearTest, variant = 0): Monument {
   const ms = MOSQUE[city] ?? MOSQUE.default;
   const ts = TEMPLE[city] ?? TEMPLE.default;
   const { w, d } = l;
@@ -132,11 +146,18 @@ export function buildLandmark(l: MapLandmark, city: Landmark, clear?: ClearTest)
     case "tomb":
       return tomb(...modelExtent(l.model, w, d), ms);
     case "temple":
-    case "shrine":
+    case "shrine": {
+      const [tw, td] = modelExtent(l.model, w, d);
       // Chennai's and Bengaluru's temples are Dravidian.
-      return l.model === "temple" && (city === "chennai" || city === "bengaluru")
-        ? smallDravidianTemple(...modelExtent(l.model, w, d))
-        : temple(...modelExtent(l.model, w, d), ts);
+      if (l.model === "temple" && (city === "chennai" || city === "bengaluru")) return smallDravidianTemple(tw, td);
+      // A Swaminarayan mandir, and Ahmedabad's shrines: Gujarati, domed and clustered.
+      if (/swami ?narayan/i.test(l.name)) return gurjaraTemple(tw, td, { stone: 0xf4f1ea, trim: 0xe3d6bd, plinth: 1.2 });
+      if (city === "ahmedabad") return gurjaraTemple(tw, td, { stone: 0xd9b38c, trim: 0xc49a6c, plinth: 1.0 });
+      // The street-corner shrines: Hanuman's in sindoor, the Bhagyalaxmi's whitewashed under its tin.
+      if (/hanuman/i.test(l.name)) return waysideShrine(tw, td, { wall: 0xe8601c, roof: 0x7d8a94, tower: "curved" });
+      if (/bhagyalaxmi/i.test(l.name)) return waysideShrine(tw, td, { wall: 0xf2efe8, roof: 0x8a969e, tower: "dome" });
+      return temple(tw, td, ts);
+    }
     case "deul_small":
       return deul(...modelExtent(l.model, w, d));
     case "lingaraj":
@@ -170,8 +191,15 @@ export function buildLandmark(l: MapLandmark, city: Landmark, clear?: ClearTest)
       return fountain(w, d, 0xd8cfbd);
     case "kabutar_khana":
       return kabutarKhana(w, d);
-    case "colonial":
-      return colonialBlock(w, d, Math.max(2, Math.min(4, Math.round(Math.min(w, d) / 8))), 0xe6d8b8);
+    case "colonial": {
+      const floors = Math.max(2, Math.min(4, Math.round(Math.min(w, d) / 8)));
+      // Park Street's and Chowringhee's mansion blocks, and the Asiatic
+      // Society's neoclassical front: one vocabulary, each its own face.
+      if (/Queens Mansions/i.test(l.name)) return colonialBlock(w, d, 5, 0xe3c48a, { turrets: true, balconies: true, trim: 0xf6efe0 });
+      if (/Chowringhee Mansions/i.test(l.name)) return colonialBlock(w, d, 4, 0xefe3cb, { arcade: true, balconies: true, trim: 0xfaf6ee });
+      if (/Asiatic Society/i.test(l.name)) return colonialBlock(w, d, 2, 0xf3efe6, { portico: true, trim: 0xffffff });
+      return colonialBlock(w, d, floors, 0xe6d8b8);
+    }
     case "agiyari":
       return colonialBlock(w, d, 2, 0xf0e6d0);
     case "memorial_garden":
@@ -183,9 +211,16 @@ export function buildLandmark(l: MapLandmark, city: Landmark, clear?: ClearTest)
     case "cinema": {
       // Out at the front of its plot, on the street, the rest a forecourt behind.
       const [cw, cd] = modelExtent(l.model, w, d);
-      const m = fit(makeArtDecoCinema(), cw, cd, 3, CINEMA_HALL);
+      // Bombay's are Art Deco; Bengaluru's, 1970s single screens, each its own colours.
+      const m =
+        city === "bengaluru"
+          ? fit(makeSingleScreenCinema(undefined, variant), cw, cd, 3, singleScreenCinemaSolids(variant))
+          : fit(makeArtDecoCinema(), cw, cd, 3, CINEMA_HALL);
       const dz = (d - cd) / 2;
-      m.group.position.z = dz;
+      // Shifted inside the landmark's group: placing the landmark sets that
+      // group's own position, which would drop the shift and leave the hall's
+      // colliders standing in the forecourt.
+      m.group.children[0].position.z += dz;
       return { ...m, colliders: m.colliders.map((c) => ({ ...c, z: c.z + dz })) };
     }
     case "fishing_nets": {
@@ -195,12 +230,13 @@ export function buildLandmark(l: MapLandmark, city: Landmark, clear?: ClearTest)
       // Each net's boom reaches out some twenty metres over the water.
       const n = Math.max(2, Math.floor(w / 20));
       for (let i = 0; i < n; i++) {
-        const net = fit(makeChineseFishingNet(undefined, 40 + i), 20, 20, 2);
+        const net = fit(makeChineseFishingNet(undefined, 40 + i), 20, 20, 2, FISHING_NET_GROUND);
         net.group.position.x = -w / 2 + (w * (i + 0.5)) / n;
         // The boom and net reach out over the water, off the landmark's back.
         net.group.rotation.y = Math.PI;
         g.add(net.group);
-        colliders.push({ ...net.colliders[0], x: net.group.position.x });
+        // Turned round with the net: (x, z) -> (-x, -z).
+        for (const c of net.colliders) colliders.push({ x: net.group.position.x - c.x, z: -c.z, hw: c.hw, hd: c.hd });
       }
       return { group: g, colliders, heights: [] };
     }
@@ -229,7 +265,10 @@ export function placeLandmarks(
   const group = new THREE.Group();
   group.name = "landmarks";
   const inners: InnerSpot[] = [];
+  const seen = new Map<string, number>();
   for (const l of landmarks) {
+    const variant = seen.get(l.model) ?? 0;
+    seen.set(l.model, variant + 1);
     const c = Math.cos(l.rot);
     const s = Math.sin(l.rot);
     // Local (u, v) -> world: local +x = (cos, -sin), local +z = (sin, cos).
@@ -244,7 +283,7 @@ export function placeLandmarks(
       }
       return true;
     };
-    const m = buildLandmark(l, city, clear);
+    const m = buildLandmark(l, city, clear, variant);
     m.group.position.set(l.x, 0, l.z);
     m.group.rotation.y = l.rot;
     m.group.userData.landmark = l.name;

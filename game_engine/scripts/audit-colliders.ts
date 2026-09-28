@@ -18,19 +18,25 @@ import { createTransitMaterial } from "../lib/game/transit";
 import { hits } from "../lib/game/world/collide";
 
 const only = process.argv[2];
-const R = 0.35;
+/** The player's body (engine.ts PLAYER_RADIUS). */
+const R = +(process.env.R ?? 0.55);
+/** Detail streams in round the player: audit the map a region at a time. */
+const REGION = +(process.env.REGION ?? 90);
 const ray = new THREE.Raycaster();
 
 for (const d of SEED_DISTRICTS) {
   if (only && d.id !== only) continue;
   const map = JSON.parse(readFileSync(join(__dirname, "../public/maps", `${d.id}.json`), "utf8")) as MapData;
   const world = buildWorld(map, d, { vehicleMats: createVehicleMaterials(), transitMat: createTransitMaterial(), toon: (m) => m });
-  world.prime(new THREE.Vector3(map.spawn.x, 0, map.spawn.z));
-  const solids: THREE.Object3D[] = [];
-  world.group.traverse((o) => {
-    if ((o as THREE.Mesh).isMesh) solids.push(o);
-  });
-  world.group.updateMatrixWorld(true);
+  let solids: THREE.Object3D[] = [];
+  const streamAround = (x: number, z: number) => {
+    world.prime(new THREE.Vector3(x, 0, z));
+    solids = [];
+    world.group.traverse((o) => {
+      if ((o as THREE.Mesh).isMesh && o.visible && o.parent?.visible !== false) solids.push(o);
+    });
+    world.group.updateMatrixWorld(true);
+  };
   const water = map.areas.filter((a) => a.kind === "water" || a.kind === "sea");
   const inWater = (x: number, z: number) =>
     water.some((a) => {
@@ -60,8 +66,10 @@ for (const d of SEED_DISTRICTS) {
     return `other ${(c.hw * 2).toFixed(1)}x${(c.hd * 2).toFixed(1)}`;
   };
   const H = map.half - 2;
-  for (let z = -H; z <= H; z += 1) {
-    for (let x = -H; x <= H; x += 1) {
+  for (let rz = -H; rz <= H; rz += REGION) for (let rx = -H; rx <= H; rx += REGION) {
+  streamAround(rx + REGION / 2, rz + REGION / 2);
+  for (let z = rz; z < Math.min(H, rz + REGION); z += 1) {
+    for (let x = rx; x < Math.min(H, rx + REGION); x += 1) {
       // Inside a collider proper, not just within a body's width of one
       // (a ray along a wall would graze past that margin).
       if (!world.collide.blocked(x, z, -0.4) || inWater(x, z)) continue;
@@ -93,6 +101,7 @@ for (const d of SEED_DISTRICTS) {
       }
     }
   }
+  }
   // Cluster neighbouring ghost cells into places.
   const places: { x: number; z: number; n: number }[] = [];
   for (const [x, z] of ghosts) {
@@ -106,6 +115,7 @@ for (const d of SEED_DISTRICTS) {
   // Posts, trunks and bollards are thinner than the grid can see into: aim
   // straight at each one's centre instead.
   let poles = 0;
+  streamAround(map.spawn.x, map.spawn.z);
   for (const c of world.collide.all) {
     if (c.kind !== "box" || Math.max(c.hw, c.hd) > 0.6) continue;
     const seen = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) =>
@@ -122,5 +132,6 @@ for (const d of SEED_DISTRICTS) {
     }
   }
   console.log(`${d.id}: ${ghosts.length} unseen blocked edge cells in ${places.length} places, ${poles} unseen posts`);
+  if (process.env.PLACES) for (const p of places.sort((a, b) => b.n - a.n).slice(0, 12)) console.log(`    ${p.n} cells round (${(p.x / p.n).toFixed(0)}, ${(p.z / p.n).toFixed(0)})`);
   for (const [k, n] of [...blame].sort((a, b) => b[1] - a[1]).slice(0, 12)) console.log(`  ${k}: ${n}`);
 }
