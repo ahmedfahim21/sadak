@@ -21,7 +21,7 @@
 
 SADAK drops you into real Indian neighbourhoods, rebuilt from OpenStreetMap, with a list of everyday errands in each one: stop an auto, order at a food stall, buy an offering at the temple, catch a bus, and one errand that belongs to that city. You get them done by walking up to people and **speaking to them** in Hindi, Tamil, Kannada, Bengali, Telugu, Malayalam, Marathi, Gujarati, Punjabi or Odia.
 
-Each errand is a short spoken lesson. The character says a line, you see what to say back in script, romanisation and English, and every word you say is scored. Every voice, in both directions, runs on [Sarvam AI](https://www.sarvam.ai). You leave each district knowing a few real sentences you didn't know before.
+Each errand is a short spoken lesson. The character says a line, you see what to say back in script and romanisation, with its meaning in whichever language you read best, and every word you say is scored. Every voice, in both directions, runs on [Sarvam AI](https://www.sarvam.ai). You leave each district knowing a few real sentences you didn't know before.
 
 ## Screenshots
 
@@ -46,7 +46,7 @@ Each errand is a short spoken lesson. The character says a line, you see what to
 
 <p align="center">
   <img src="docs/assets/dialogue-lesson-header.png" alt="A conversation with an NPC" width="80%" /><br/>
-  <sub>Every line comes with script, romanisation and a gloss.</sub>
+  <sub>Every line comes with script, romanisation and its meaning in your language.</sub>
 </p>
 
 ## Features
@@ -54,6 +54,7 @@ Each errand is a short spoken lesson. The character says a line, you see what to
 - **Talk, don't click.** Hold to speak, and the character answers out loud in their own language.
 - **10 districts, 10 languages.** Each with five everyday errands, its own characters and a phrasebook.
 - **Word-by-word feedback.** Each line you speak is matched against the phrase, word by word.
+- **Learn from the language you know.** Instructions and meanings come in English or any of the ten Indian languages, so a Tamil speaker can learn Bengali through Tamil.
 - **Three difficulty levels.** Pick easy, medium or hard and the lessons change with it.
 - **Characters who remember you.** Come back to someone you've already met and they greet you with something you told them last time.
 - **Real maps.** Street networks, landmarks and transit from OpenStreetMap, cel-shaded in three.js.
@@ -61,7 +62,7 @@ Each errand is a short spoken lesson. The character says a line, you see what to
 ## How it works
 
 ```
-scripted NPC line → bulbul:v3 (TTS) → you hear it, with script, romanisation and a gloss
+scripted NPC line → bulbul:v3 (TTS) → you hear it, with script, romanisation and its meaning in your language
 your reply → saaras:v4 (STT) → word-by-word score against the target phrase
 return visit → sarvam-105b writes a line that remembers your last conversation
 ```
