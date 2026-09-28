@@ -5,7 +5,7 @@
 <h1 align="center">SADAK</h1>
 
 <p align="center">
-  <b>Ten Indian cities. Nobody speaks English. Talk your way through.</b><br/>
+  <b>Ten Indian cities. Talk your way through.</b><br/>
   A voice-first 3D browser game where every NPC listens and replies in their own language.
 </p>
 
@@ -19,9 +19,9 @@
 
 ## About
 
-SADAK drops you into real Indian neighbourhoods, rebuilt from OpenStreetMap, and gives you a job in each one: a stolen auto, a lost scooter, an errand at the local market. The only way through is to walk up to people and **speak to them** in Hindi, Tamil, Kannada, Bengali, Telugu, Malayalam, Marathi, Gujarati, Punjabi or Odia.
+SADAK drops you into real Indian neighbourhoods, rebuilt from OpenStreetMap, with a list of everyday errands in each one: stop an auto, order at a food stall, buy an offering at the temple, catch a bus, and one errand that belongs to that city. You get them done by walking up to people and **speaking to them** in Hindi, Tamil, Kannada, Bengali, Telugu, Malayalam, Marathi, Gujarati, Punjabi or Odia.
 
-Every character is a live [Sarvam AI](https://www.sarvam.ai) voice agent with a persona, a mission rubric and a temper. Be polite and you get the clue. Offer the traffic constable a bribe and he throws you out. You leave each district knowing a few real sentences you didn't know before.
+Each errand is a short spoken lesson. The character says a line, you see what to say back in script, romanisation and English, and every word you say is scored. The characters are live [Sarvam AI](https://www.sarvam.ai) voice agents, so you can also just talk to them. You leave each district knowing a few real sentences you didn't know before.
 
 ## Screenshots
 
@@ -52,16 +52,17 @@ Every character is a live [Sarvam AI](https://www.sarvam.ai) voice agent with a 
 ## Features
 
 - **Talk, don't click.** Open-mic conversations over LiveKit, with push-to-talk as a fallback.
-- **10 districts, 10 languages.** Each with its own characters, clue chain, phrasebook and city errand.
-- **Missions judged by the model, not keywords.** A second call grades every turn against the mission's success criteria.
-- **Characters with a line you shouldn't cross.** Rudeness, bribes and threats get you turned away, never bad grammar.
+- **10 districts, 10 languages.** Each with five everyday errands, its own characters and a phrasebook.
+- **Word-by-word feedback.** Each line you speak is matched against the phrase, word by word.
+- **Three difficulty levels.** Pick easy, medium or hard and the lessons change with it.
+- **Errands judged by the model, not keywords.** In free conversation, a separate call grades each turn against what the errand needs.
 - **Real maps.** Street networks, landmarks and transit from OpenStreetMap, cel-shaded in three.js.
 
 ## How it works
 
 ```
 mic → saaras:v4 (STT) → sarvam-105b (in-character reply) → bulbul:v3 (TTS) → audio + subtitles
-                                  ↘ mission grading (separate call) ↗
+                                  ↘ errand grading (separate call) ↗
 ```
 
 | Part | Path | Stack |
@@ -98,10 +99,9 @@ Without the worker, or without LiveKit keys, conversations fall back to push-to-
 
 ## Credits
 
-Built by [ahmedfahim21](https://github.com/ahmedfahim21), [Parth Mittal](https://github.com/mittal-parth), Apoorva Agrawal, marcdhi and Mardav Gandhi.
+Built by [ahmedfahim21](https://github.com/ahmedfahim21), [Parth Mittal](https://github.com/mittal-parth), [Apoorva Agrawal](https://github.com/imApoorva36) and [Mardav Gandhi](https://github.com/marcdhi).
 
 - Speech, language and voices by [Sarvam AI](https://www.sarvam.ai): Saaras (STT), sarvam-105b (LLM), Bulbul (TTS).
 - Real-time audio by [LiveKit](https://livekit.io).
 - Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, available under the Open Database License (ODbL 1.0).
 - The cel-shaded look is adapted from [sakura-crossing](https://github.com/Kenton-GMI/sakura-crossing) by Kenton Wang (MIT).
-- Sibling to [kahani](https://github.com/harshagw/kahani), whose Sarvam TTS client is the basis for the one here.
